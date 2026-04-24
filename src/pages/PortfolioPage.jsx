@@ -1,7 +1,7 @@
 import { BriefcaseBusiness, FolderOpen, ListChecks, RotateCcw } from "lucide-react";
 import ProjectForm from "../components/projects/ProjectForm";
 import ProjectCard from "../components/projects/ProjectCard";
-import CollapsibleCard from "../components/common/CollapsibleCard";
+import CollapsibleCard from "../components/common/AppCollapsibleCard";
 import { usePlannerStore } from "../store/usePlannerStore";
 import { summarizeProject } from "../utils/calculations";
 

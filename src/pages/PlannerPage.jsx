@@ -22,7 +22,7 @@ import PlannerRiskSummary from "../components/planner/PlannerRiskSummary";
 import PlannerDataTools from "../components/planner/PlannerDataTools";
 import PlannerBaselinePanel from "../components/planner/PlannerBaselinePanel";
 import PlannerDependencyGraphVisual from "../components/planner/PlannerDependencyGraphVisual";
-import CollapsibleCard from "../components/common/CollapsibleCard";
+import CollapsibleCard from "../components/common/AppCollapsibleCard";
 import SprintForm from "../components/sprints/SprintForm";
 import SprintList from "../components/sprints/SprintList";
 import { summarizeProject } from "../utils/calculations";
