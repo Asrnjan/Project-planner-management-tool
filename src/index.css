@@ -1,10 +1,21 @@
 @import "tailwindcss";
 
-body {
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
   margin: 0;
-  font-family: Arial, sans-serif;
+  min-height: 100%;
+}
+
+body {
+  font-family: Inter, Arial, sans-serif;
   background: #f8fafc;
   color: #0f172a;
+  line-height: 1.4;
 }
 
 * {
@@ -16,4 +27,32 @@ select,
 textarea,
 button {
   font: inherit;
+}
+
+input,
+select,
+textarea {
+  outline: none;
+}
+
+table {
+  border-spacing: 0;
+}
+
+button {
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }

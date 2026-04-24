@@ -36,23 +36,6 @@ const emptyEditState = {
   isMilestone: false,
 };
 
-function ProgressBar({ value, label }) {
-  return (
-    <div className="w-28">
-      <div className="mb-1 flex justify-between text-xs text-slate-500">
-        <span>{label}</span>
-        <span>{value}%</span>
-      </div>
-      <div className="h-2 rounded-full bg-slate-200">
-        <div
-          className="h-2 rounded-full bg-slate-900"
-          style={{ width: `${Math.max(0, Math.min(100, Number(value || 0)))}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 function sortTasksHierarchy(tasks) {
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
   const childrenMap = new Map();
@@ -81,7 +64,7 @@ function sortTasksHierarchy(tasks) {
 }
 
 function FieldLabel({ children }) {
-  return <label className="mb-1 block text-sm font-medium text-slate-700">{children}</label>;
+  return <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-600">{children}</label>;
 }
 
 export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
@@ -185,29 +168,29 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
   }
 
   return (
-    <div className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
+    <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div>
-        <h3 className="text-xl font-semibold text-slate-900">Task Tracker</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          View, filter, edit, and track tasks, subtasks, milestones, and dependencies.
+        <h3 className="text-base font-semibold tracking-tight text-slate-900">Task Tracker</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Compact task list with filters and quick edits.
         </p>
       </div>
 
-      <details className="rounded-xl border bg-slate-50 p-4" open>
-        <summary className="cursor-pointer list-none text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Task Filters
+      <details className="rounded-lg border border-slate-200 bg-slate-50 p-3" open>
+        <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Filters
         </summary>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
           <div>
             <FieldLabel>Sprint</FieldLabel>
             <select
               name="sprintId"
               value={filters.sprintId}
               onChange={handleFilterChange}
-              className="w-full rounded-lg border p-2"
+              className="w-full rounded-lg border border-slate-300 p-2 text-sm"
             >
-              <option value="">All sprints</option>
+              <option value="">All</option>
               {sprints.map((sprint) => (
                 <option key={sprint.id} value={sprint.id}>
                   {sprint.name}
@@ -222,9 +205,9 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
               name="status"
               value={filters.status}
               onChange={handleFilterChange}
-              className="w-full rounded-lg border p-2"
+              className="w-full rounded-lg border border-slate-300 p-2 text-sm"
             >
-              <option value="">All statuses</option>
+              <option value="">All</option>
               <option value="Not Started">Not Started</option>
               <option value="In Progress">In Progress</option>
               <option value="Done">Done</option>
@@ -238,9 +221,9 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
               name="owner"
               value={filters.owner}
               onChange={handleFilterChange}
-              className="w-full rounded-lg border p-2"
+              className="w-full rounded-lg border border-slate-300 p-2 text-sm"
             >
-              <option value="">All owners</option>
+              <option value="">All</option>
               {ownerOptions.map((owner) => (
                 <option key={owner} value={owner}>
                   {owner}
@@ -252,17 +235,17 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
       </details>
 
       {editingTask.id && (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-          <h4 className="mb-4 text-lg font-semibold text-slate-900">Edit Task</h4>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <h4 className="mb-3 text-sm font-semibold text-slate-900">Edit Task</h4>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="xl:col-span-2">
               <FieldLabel>Task Title</FieldLabel>
               <input
                 name="title"
                 value={editingTask.title}
                 onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
+                className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               />
             </div>
 
@@ -272,7 +255,7 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
                 name="owner"
                 value={editingTask.owner}
                 onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
+                className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               />
             </div>
 
@@ -282,9 +265,9 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
                 name="sprintId"
                 value={editingTask.sprintId}
                 onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
+                className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               >
-                <option value="">Select sprint</option>
+                <option value="">Select</option>
                 {sprints.map((sprint) => (
                   <option key={sprint.id} value={sprint.id}>
                     {sprint.name}
@@ -294,31 +277,12 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
             </div>
 
             <div>
-              <FieldLabel>Parent Task</FieldLabel>
-              <select
-                name="parentTaskId"
-                value={editingTask.parentTaskId}
-                onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
-              >
-                <option value="">No parent task</option>
-                {tasks
-                  .filter((task) => task.id !== editingTask.id)
-                  .map((task) => (
-                    <option key={task.id} value={task.id}>
-                      {task.title}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
               <FieldLabel>Priority</FieldLabel>
               <select
                 name="priority"
                 value={editingTask.priority}
                 onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
+                className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               >
                 <option>Low</option>
                 <option>Medium</option>
@@ -332,7 +296,7 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
                 name="status"
                 value={editingTask.status}
                 onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
+                className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               >
                 <option>Not Started</option>
                 <option>In Progress</option>
@@ -342,7 +306,7 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
             </div>
 
             <div>
-              <FieldLabel>Planned Progress (%)</FieldLabel>
+              <FieldLabel>Planned %</FieldLabel>
               <input
                 name="plannedProgress"
                 type="number"
@@ -350,12 +314,12 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
                 max="100"
                 value={editingTask.plannedProgress}
                 onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
+                className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               />
             </div>
 
             <div>
-              <FieldLabel>Actual Progress (%)</FieldLabel>
+              <FieldLabel>Actual %</FieldLabel>
               <input
                 name="actualProgress"
                 type="number"
@@ -363,96 +327,21 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
                 max="100"
                 value={editingTask.actualProgress}
                 onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
+                className="w-full rounded-lg border border-slate-300 p-2 text-sm"
               />
-            </div>
-
-            <div>
-              <FieldLabel>Planned Start Date</FieldLabel>
-              <input
-                name="plannedStart"
-                type="date"
-                value={editingTask.plannedStart}
-                onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Planned End Date</FieldLabel>
-              <input
-                name="plannedEnd"
-                type="date"
-                value={editingTask.plannedEnd}
-                onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Actual Start Date</FieldLabel>
-              <input
-                name="actualStart"
-                type="date"
-                value={editingTask.actualStart}
-                onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
-              />
-            </div>
-
-            <div>
-              <FieldLabel>Actual End Date</FieldLabel>
-              <input
-                name="actualEnd"
-                type="date"
-                value={editingTask.actualEnd}
-                onChange={handleEditChange}
-                className="w-full rounded-lg border p-3"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <FieldLabel>Dependencies</FieldLabel>
-              <select
-                name="dependencyIds"
-                multiple
-                value={editingTask.dependencyIds}
-                onChange={handleEditChange}
-                className="min-h-28 w-full rounded-lg border p-3"
-              >
-                {tasks
-                  .filter((task) => task.id !== editingTask.id)
-                  .map((task) => (
-                    <option key={task.id} value={task.id}>
-                      {task.title}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="flex items-center gap-2 rounded-lg border bg-white p-3 text-sm font-medium text-slate-700">
-                <input
-                  type="checkbox"
-                  name="isMilestone"
-                  checked={editingTask.isMilestone}
-                  onChange={handleEditChange}
-                />
-                Mark this task as a milestone
-              </label>
             </div>
           </div>
 
-          <div className="mt-4 flex gap-3">
+          <div className="mt-4 flex gap-2">
             <button
               onClick={saveEdit}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-white"
+              className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-white sm:text-sm"
             >
-              Save Changes
+              Save
             </button>
             <button
               onClick={cancelEdit}
-              className="rounded-lg bg-slate-200 px-4 py-2 text-slate-700"
+              className="rounded-lg bg-slate-200 px-3 py-2 text-xs text-slate-700 sm:text-sm"
             >
               Cancel
             </button>
@@ -460,21 +349,21 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
         </div>
       )}
 
-      <div className="overflow-auto rounded-xl border">
+      <div className="overflow-auto rounded-xl border border-slate-200">
         <table className="min-w-full border-collapse text-sm">
           <thead className="bg-slate-50">
-            <tr className="border-b text-left text-slate-600">
-              <th className="px-4 py-3">Task Name</th>
-              <th className="px-4 py-3">Sprint</th>
-              <th className="px-4 py-3">Owner</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Priority</th>
-              <th className="px-4 py-3">Dependencies</th>
-              <th className="px-4 py-3">Planned Progress</th>
-              <th className="px-4 py-3">Actual Progress</th>
-              <th className="px-4 py-3">Variance</th>
-              <th className="px-4 py-3">Delay</th>
-              <th className="px-4 py-3">Actions</th>
+            <tr className="border-b border-slate-200 text-left text-slate-600">
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Task</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Sprint</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Owner</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Status</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Priority</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Deps</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Plan %</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Act %</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Var</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Delay</th>
+              <th className="px-3 py-2 text-xs font-semibold uppercase tracking-wide">Action</th>
             </tr>
           </thead>
 
@@ -488,81 +377,55 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
               return (
                 <tr
                   key={task.id}
-                  className={`border-b align-top ${overdue ? "bg-red-50" : "bg-white"}`}
+                  className={`border-b border-slate-200 align-top hover:bg-slate-50 ${
+                    overdue ? "bg-red-50/50" : "bg-white"
+                  }`}
                 >
-                  <td className="px-4 py-3 font-medium text-slate-900">
+                  <td className="px-3 py-2.5 font-medium text-slate-900">
                     <div
-                      className="flex items-center gap-2"
-                      style={{ paddingLeft: `${task.depth * 20}px` }}
+                      className="flex items-center gap-1.5"
+                      style={{ paddingLeft: `${task.depth * 16}px` }}
                     >
                       {task.depth > 0 && <span className="text-slate-400">└</span>}
-                      <span>{task.title}</span>
+                      <span className="line-clamp-1">{task.title}</span>
                       {task.parentTaskId && (
-                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700">
-                          Subtask
+                        <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] text-indigo-700">
+                          Sub
                         </span>
                       )}
                       {task.isMilestone && (
-                        <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs text-purple-700">
-                          Milestone
-                        </span>
-                      )}
-                      {overdue && (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
-                          Overdue
+                        <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] text-purple-700">
+                          M
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3">{sprintMap[task.sprintId] || "-"}</td>
-                  <td className="px-4 py-3">{task.owner || "-"}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">{sprintMap[task.sprintId] || "-"}</td>
+                  <td className="px-3 py-2.5">{task.owner || "-"}</td>
+                  <td className="px-3 py-2.5">
                     <span
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${getStatusClass(
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getStatusClass(
                         task.status
                       )}`}
                     >
                       {task.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3">{task.priority}</td>
-                  <td className="px-4 py-3">
-                    {dependencyTitles.length ? (
-                      <div className="flex flex-wrap gap-1">
-                        {dependencyTitles.map((title) => (
-                          <span
-                            key={title}
-                            className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700"
-                          >
-                            {title}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      "-"
-                    )}
+                  <td className="px-3 py-2.5">{task.priority}</td>
+                  <td className="px-3 py-2.5">
+                    {dependencyTitles.length ? dependencyTitles.length : "-"}
                   </td>
-                  <td className="px-4 py-3">
-                    <ProgressBar value={task.plannedProgress} label="Planned" />
-                  </td>
-                  <td className="px-4 py-3">
-                    <ProgressBar value={task.actualProgress} label="Actual" />
-                  </td>
-                  <td className="px-4 py-3">{getTaskVariance(task)}%</td>
-                  <td className="px-4 py-3">{getTaskDelayDays(task)} days</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => startEdit(task)}
-                        className="text-blue-600"
-                      >
+                  <td className="px-3 py-2.5">{task.plannedProgress || 0}%</td>
+                  <td className="px-3 py-2.5">{task.actualProgress || 0}%</td>
+                  <td className="px-3 py-2.5">{getTaskVariance(task)}%</td>
+                  <td className="px-3 py-2.5">{getTaskDelayDays(task)}d</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex gap-2">
+                      <button onClick={() => startEdit(task)} className="text-blue-600">
                         Edit
                       </button>
-                      <button
-                        onClick={() => onDelete(task.id)}
-                        className="text-red-600"
-                      >
-                        Delete
+                      <button onClick={() => onDelete(task.id)} className="text-red-600">
+                        Del
                       </button>
                     </div>
                   </td>
@@ -572,7 +435,7 @@ export default function TaskTable({ tasks, sprints, onDelete, onUpdate }) {
 
             {filteredTasks.length === 0 && (
               <tr>
-                <td colSpan="11" className="px-4 py-8 text-center text-slate-500">
+                <td colSpan="11" className="px-4 py-8 text-center text-sm text-slate-500">
                   No tasks match the selected filters.
                 </td>
               </tr>

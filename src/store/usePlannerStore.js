@@ -19,6 +19,10 @@ const initialData = stored || {
   projects: seedProjects,
   sprints: seedSprints,
   tasks: seedTasks,
+  plannerSettings: {
+    schedulingMode: "manual",
+  },
+  baselineSnapshots: [],
 };
 
 function persist(state) {
@@ -26,13 +30,87 @@ function persist(state) {
     projects: state.projects,
     sprints: state.sprints,
     tasks: state.tasks,
+    plannerSettings: state.plannerSettings,
+    baselineSnapshots: state.baselineSnapshots,
   });
 }
 
-export const usePlannerStore = create((set) => ({
+export const usePlannerStore = create((set, get) => ({
   projects: initialData.projects,
   sprints: initialData.sprints,
   tasks: initialData.tasks,
+  plannerSettings: initialData.plannerSettings || { schedulingMode: "manual" },
+  baselineSnapshots: initialData.baselineSnapshots || [],
+
+  setSchedulingMode: (mode) => {
+    set((state) => {
+      const next = {
+        ...state,
+        plannerSettings: {
+          ...state.plannerSettings,
+          schedulingMode: mode,
+        },
+      };
+
+      persist(next);
+      return next;
+    });
+  },
+
+  createBaselineSnapshot: ({ name, projectId = "" }) => {
+    set((state) => {
+      const scopedTasks = projectId
+        ? state.tasks.filter((task) => task.projectId === projectId)
+        : state.tasks;
+
+      const snapshot = {
+        id: makeId("baseline"),
+        name: name?.trim() || `Baseline ${state.baselineSnapshots.length + 1}`,
+        projectId,
+        createdAt: new Date().toISOString(),
+        tasks: scopedTasks.map((task) => ({
+          id: task.id,
+          title: task.title,
+          projectId: task.projectId,
+          plannedStart: task.plannedStart || "",
+          plannedEnd: task.plannedEnd || "",
+          plannedProgress: Number(task.plannedProgress || 0),
+          baselineStart: task.baselineStart || "",
+          baselineEnd: task.baselineEnd || "",
+          status: task.status || "",
+        })),
+      };
+
+      const next = {
+        ...state,
+        baselineSnapshots: [snapshot, ...state.baselineSnapshots],
+      };
+
+      persist(next);
+      return next;
+    });
+  },
+
+  importPlannerData: (payload) => {
+    set((state) => {
+      const next = {
+        ...state,
+        projects: Array.isArray(payload.projects) ? payload.projects : [],
+        sprints: Array.isArray(payload.sprints) ? payload.sprints : [],
+        tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
+        plannerSettings:
+          payload.plannerSettings && typeof payload.plannerSettings === "object"
+            ? payload.plannerSettings
+            : { schedulingMode: "manual" },
+        baselineSnapshots: Array.isArray(payload.baselineSnapshots)
+          ? payload.baselineSnapshots
+          : [],
+      };
+
+      persist(next);
+      return next;
+    });
+  },
 
   addProject: (project) => {
     set((state) => {
@@ -77,6 +155,9 @@ export const usePlannerStore = create((set) => ({
         projects: state.projects.filter((p) => p.id !== projectId),
         sprints: state.sprints.filter((s) => s.projectId !== projectId),
         tasks: state.tasks.filter((t) => t.projectId !== projectId),
+        baselineSnapshots: state.baselineSnapshots.filter(
+          (snapshot) => snapshot.projectId !== projectId
+        ),
       };
 
       persist(next);
@@ -201,6 +282,18 @@ export const usePlannerStore = create((set) => ({
     });
   },
 
+  bulkReplaceTasks: (nextTasks) => {
+    set((state) => {
+      const next = {
+        ...state,
+        tasks: nextTasks,
+      };
+
+      persist(next);
+      return next;
+    });
+  },
+
   deleteTask: (taskId) => {
     set((state) => {
       const next = {
@@ -225,6 +318,10 @@ export const usePlannerStore = create((set) => ({
       projects: seedProjects,
       sprints: seedSprints,
       tasks: seedTasks,
+      plannerSettings: {
+        schedulingMode: "manual",
+      },
+      baselineSnapshots: [],
     });
   },
 }));
