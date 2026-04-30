@@ -4,16 +4,26 @@ import {
   calculateEndDateFromDuration,
   createGridDraftMap,
   getTaskDuration,
-  applyGridDraftsToTasks,
   applySingleGridDraftToTask,
   getTaskQuickFixes,
 } from "../../utils/planner";
-import { Plus, Trash2, ChevronDown, Lock, Unlock } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  Lock,
+  Unlock,
+  Milestone,
+  GitBranch,
+  Rows3,
+  RotateCcw,
+} from "lucide-react";
 
 function HeaderCell({ children, className = "" }) {
   return (
     <th
-      className={`px-2 py-2 text-left text-[9px] font-semibold uppercase tracking-wide text-slate-500 ${className}`}
+      className={`px-1.5 py-2 text-left text-[9px] font-semibold uppercase tracking-wide text-slate-500 ${className}`}
     >
       {children}
     </th>
@@ -25,7 +35,7 @@ function GridInput({ readOnly = false, className = "", ...props }) {
     <input
       {...props}
       readOnly={readOnly}
-      className={`w-full rounded-md border px-2 py-1.5 text-[11px] leading-4 transition ${
+      className={`w-full rounded-md border px-1.5 py-1.5 text-[11px] leading-4 transition ${
         readOnly
           ? "border-slate-200 bg-slate-100 text-slate-600"
           : "border-slate-200 bg-white text-slate-900 focus:border-slate-400 focus:outline-none"
@@ -40,7 +50,7 @@ function GridSelect({ disabled = false, className = "", children, ...props }) {
       <select
         {...props}
         disabled={disabled}
-        className={`w-full appearance-none rounded-md border px-2 py-1.5 pr-7 text-[11px] leading-4 transition ${
+        className={`w-full appearance-none rounded-md border px-1.5 py-1.5 pr-6 text-[11px] leading-4 transition ${
           disabled
             ? "border-slate-200 bg-slate-100 text-slate-600"
             : "border-slate-200 bg-white text-slate-900 focus:border-slate-400 focus:outline-none"
@@ -48,7 +58,8 @@ function GridSelect({ disabled = false, className = "", children, ...props }) {
       >
         {children}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+
+      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400" />
     </div>
   );
 }
@@ -64,16 +75,121 @@ function issueBadgeClass(severity) {
   }
 }
 
+function statusSelectClass(status) {
+  switch (status) {
+    case "Done":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold";
+    case "In Progress":
+      return "border-blue-200 bg-blue-50 text-blue-700 font-semibold";
+    case "Blocked":
+      return "border-red-200 bg-red-50 text-red-700 font-semibold";
+    default:
+      return "border-slate-200 bg-white text-slate-700";
+  }
+}
+
+function progressColor(status) {
+  if (status === "Done") return "bg-emerald-500";
+  if (status === "Blocked") return "bg-red-500";
+  if (status === "In Progress") return "bg-blue-500";
+  return "bg-slate-400";
+}
+
 function IconActionButton({ title, className = "", children, ...props }) {
   return (
     <button
       {...props}
       title={title}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition ${className}`}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${className}`}
     >
       {children}
     </button>
   );
+}
+
+function ToolbarButton({ children, variant = "secondary", ...props }) {
+  const variantClass =
+    variant === "primary"
+      ? "bg-slate-900 text-white hover:bg-slate-800"
+      : variant === "blue"
+      ? "bg-blue-50 text-blue-700 hover:bg-blue-100"
+      : "bg-slate-100 text-slate-700 hover:bg-slate-200";
+
+  return (
+    <button
+      type="button"
+      {...props}
+      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${variantClass}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MilestoneCell({ checked, disabled, onChange }) {
+  return (
+    <label
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-1 ${
+        checked
+          ? "bg-purple-100 text-purple-700"
+          : disabled
+          ? "bg-slate-100 text-slate-500"
+          : "bg-slate-50 text-slate-700"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-3 w-3"
+      />
+      <span className="text-[9px] font-medium">MS</span>
+    </label>
+  );
+}
+
+function getTaskDepth(task, taskById) {
+  let depth = 0;
+  let currentParentId = task.parentTaskId;
+
+  while (currentParentId && taskById[currentParentId]) {
+    depth += 1;
+    currentParentId = taskById[currentParentId].parentTaskId;
+  }
+
+  return depth;
+}
+
+function getTaskWbs(task, fallbackIndex) {
+  return (
+    task.wbs ||
+    task.outlineNumber ||
+    task.externalId ||
+    task.externalUid ||
+    String(fallbackIndex + 1)
+  );
+}
+
+function getDependencyText(task, taskById) {
+  const dependencies = Array.isArray(task.dependencyIds)
+    ? task.dependencyIds
+    : [];
+
+  if (!dependencies.length) return "";
+
+  return dependencies
+    .map((dependencyId) => {
+      const dependency = taskById[dependencyId];
+
+      return (
+        dependency?.wbs ||
+        dependency?.outlineNumber ||
+        dependency?.title ||
+        dependencyId
+      );
+    })
+    .join(", ");
 }
 
 export default function PlannerScheduleTable({
@@ -87,11 +203,19 @@ export default function PlannerScheduleTable({
   onRecalculate,
 }) {
   const { ordered } = useMemo(() => buildTaskIndexMaps(tasks), [tasks]);
+
   const [collapsedParents, setCollapsedParents] = useState({});
   const [selectedRowId, setSelectedRowId] = useState("");
   const [drafts, setDrafts] = useState({});
   const [flashTaskId, setFlashTaskId] = useState("");
+  const [lastActionText, setLastActionText] = useState("Auto-save ready");
+
   const rowRefs = useRef({});
+  const undoStackRef = useRef([]);
+
+  const taskById = useMemo(() => {
+    return Object.fromEntries(tasks.map((task) => [task.id, task]));
+  }, [tasks]);
 
   useEffect(() => {
     setDrafts(createGridDraftMap(tasks));
@@ -99,25 +223,40 @@ export default function PlannerScheduleTable({
 
   const childCountMap = useMemo(() => {
     const map = {};
+
     tasks.forEach((task) => {
       if (task.parentTaskId) {
         map[task.parentTaskId] = (map[task.parentTaskId] || 0) + 1;
       }
     });
+
     return map;
   }, [tasks]);
+
+  const hierarchyStats = useMemo(() => {
+    const summaryRows = tasks.filter((task) => childCountMap[task.id]).length;
+    const leafRows = tasks.length - summaryRows;
+    const milestones = tasks.filter((task) => task.isMilestone).length;
+
+    return {
+      summaryRows,
+      leafRows,
+      milestones,
+      total: tasks.length,
+    };
+  }, [tasks, childCountMap]);
 
   useEffect(() => {
     if (!focusedTaskId) return;
 
-    const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
     const nextCollapsed = {};
 
     function openParentChain(taskId) {
-      let current = byId[taskId];
+      let current = taskById[taskId];
+
       while (current?.parentTaskId) {
         nextCollapsed[current.parentTaskId] = false;
-        current = byId[current.parentTaskId];
+        current = taskById[current.parentTaskId];
       }
     }
 
@@ -130,6 +269,7 @@ export default function PlannerScheduleTable({
 
     const timeout = setTimeout(() => {
       const rowEl = rowRefs.current[focusedTaskId];
+
       if (rowEl) {
         rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
         setSelectedRowId(focusedTaskId);
@@ -142,21 +282,47 @@ export default function PlannerScheduleTable({
     }, 120);
 
     return () => clearTimeout(timeout);
-  }, [focusedTaskId, tasks]);
+  }, [focusedTaskId, taskById]);
 
   const visibleTasks = useMemo(() => {
     return ordered.filter((task) => {
       if (!task.parentTaskId) return true;
 
       let currentParentId = task.parentTaskId;
+
       while (currentParentId) {
         if (collapsedParents[currentParentId]) return false;
-        const parent = ordered.find((t) => t.id === currentParentId);
+
+        const parent = ordered.find((item) => item.id === currentParentId);
         currentParentId = parent?.parentTaskId || "";
       }
+
       return true;
     });
   }, [ordered, collapsedParents]);
+
+  function pushUndoSnapshot() {
+    undoStackRef.current = [...undoStackRef.current, tasks].slice(-50);
+  }
+
+  function handleUndo() {
+    const previous = undoStackRef.current.pop();
+
+    if (!previous) {
+      setLastActionText("Nothing to undo");
+      return;
+    }
+
+    onBulkUpdate(previous);
+    setLastActionText("Rolled back last change");
+  }
+
+  function handleGridKeyDown(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      handleUndo();
+    }
+  }
 
   function toggleCollapse(taskId) {
     setCollapsedParents((prev) => ({
@@ -165,94 +331,102 @@ export default function PlannerScheduleTable({
     }));
   }
 
-  function updateDraft(taskId, field, value) {
-    setDrafts((prev) => {
-      const current = prev[taskId] || {};
-      const next = {
-        ...prev,
-        [taskId]: {
-          ...current,
-          [field]: value,
-        },
-      };
+  function expandAll() {
+    setCollapsedParents({});
+  }
 
-      if (field === "durationDays" && current.plannedStart) {
-        next[taskId].plannedEnd = calculateEndDateFromDuration(
-          current.plannedStart,
-          value
-        );
+  function collapseAll() {
+    const next = {};
+
+    tasks.forEach((task) => {
+      if (childCountMap[task.id]) {
+        next[task.id] = true;
       }
-
-      if (field === "plannedStart") {
-        next[taskId].plannedEnd = calculateEndDateFromDuration(
-          value,
-          current.durationDays || 1
-        );
-      }
-
-      return next;
     });
+
+    setCollapsedParents(next);
   }
 
-  function toggleManualLock(taskId) {
-    setDrafts((prev) => ({
-      ...prev,
-      [taskId]: {
-        ...prev[taskId],
-        isManualLocked: !prev[taskId]?.isManualLocked,
-      },
-    }));
-  }
-
-  function saveRow(taskId) {
+  function commitTaskUpdate(taskId, nextDraft) {
     const task = tasks.find((item) => item.id === taskId);
-    const draft = drafts[taskId];
-    if (!task || !draft) return;
+    if (!task) return;
 
     const hasChildren = Boolean(childCountMap[taskId]);
+
+    pushUndoSnapshot();
 
     if (hasChildren) {
       const updatedSummaryRow = {
         ...task,
-        title: draft.title,
-        owner: draft.owner,
+        title: nextDraft.title,
+        owner: nextDraft.owner,
       };
 
       const nextTasks = tasks.map((item) =>
         item.id === taskId ? updatedSummaryRow : item
       );
+
       onBulkUpdate(nextTasks);
-      setSelectedRowId(taskId);
+      setLastActionText("Auto-saved summary row");
       return;
     }
 
     const updatedRow = applySingleGridDraftToTask(
       task,
-      { ...draft, isManualLocked: true },
+      { ...nextDraft, isManualLocked: true },
       tasks
     );
 
-    const nextTasks = tasks.map((item) => (item.id === taskId ? updatedRow : item));
+    const nextTasks = tasks.map((item) =>
+      item.id === taskId ? updatedRow : item
+    );
+
     onBulkUpdate(nextTasks);
-    setSelectedRowId(taskId);
+    setLastActionText("Auto-saved");
   }
 
-  function saveAllRows() {
-    const summaryUpdated = tasks.map((task) => {
-      const hasChildren = Boolean(childCountMap[task.id]);
-      const draft = drafts[task.id];
+  function updateDraft(taskId, field, value) {
+    const current = drafts[taskId] || {};
+    const nextDraft = {
+      ...current,
+      [field]: value,
+    };
 
-      if (!hasChildren || !draft) return task;
+    if (field === "durationDays" && current.plannedStart) {
+      nextDraft.plannedEnd = calculateEndDateFromDuration(
+        current.plannedStart,
+        value
+      );
+    }
 
-      return {
-        ...task,
-        title: draft.title,
-        owner: draft.owner,
-      };
-    });
+    if (field === "plannedStart") {
+      nextDraft.plannedEnd = calculateEndDateFromDuration(
+        value,
+        current.durationDays || 1
+      );
+    }
 
-    const recalculated = applyGridDraftsToTasks(summaryUpdated, drafts);
-    onBulkUpdate(recalculated);
+    setDrafts((prev) => ({
+      ...prev,
+      [taskId]: nextDraft,
+    }));
+
+    commitTaskUpdate(taskId, nextDraft);
+  }
+
+  function toggleManualLock(taskId) {
+    const current = drafts[taskId] || {};
+    const nextDraft = {
+      ...current,
+      isManualLocked: !current.isManualLocked,
+    };
+
+    setDrafts((prev) => ({
+      ...prev,
+      [taskId]: nextDraft,
+    }));
+
+    commitTaskUpdate(taskId, nextDraft);
   }
 
   function handleAddRow() {
@@ -260,6 +434,8 @@ export default function PlannerScheduleTable({
       alert("Select a project first to add plan rows.");
       return;
     }
+
+    pushUndoSnapshot();
 
     onAddTask({
       projectId: selectedProjectId,
@@ -274,24 +450,30 @@ export default function PlannerScheduleTable({
       actualEnd: "",
       plannedProgress: 0,
       actualProgress: 0,
-      dependencyIds: [],
-      dependencyRules: [],
       durationDays: 1,
       isMilestone: false,
       isManualLocked: false,
+      dependencyIds: [],
+      dependencyRules: [],
     });
+
+    setLastActionText("Added task");
   }
 
-  function handleInsertBelow() {
-    const selected = tasks.find((task) => task.id === selectedRowId);
+  function handleInsertBelow(baseTaskId = selectedRowId) {
+    const selected = tasks.find((task) => task.id === baseTaskId);
+
     if (!selected) {
       alert("Select a row first.");
       return;
     }
 
+    pushUndoSnapshot();
+
     onAddTask({
       projectId: selected.projectId,
       sprintId: selected.sprintId || "",
+      parentTaskId: selected.parentTaskId || "",
       title: "Inserted Task",
       owner: "",
       priority: "Medium",
@@ -302,20 +484,25 @@ export default function PlannerScheduleTable({
       actualEnd: "",
       plannedProgress: 0,
       actualProgress: 0,
-      dependencyIds: [],
-      dependencyRules: [],
       durationDays: 1,
       isMilestone: false,
       isManualLocked: false,
+      dependencyIds: [],
+      dependencyRules: [],
     });
+
+    setLastActionText("Inserted task");
   }
 
   function handleAddSubtask(targetTaskId) {
     const parentTask = tasks.find((task) => task.id === targetTaskId);
+
     if (!parentTask) {
       alert("Select a parent row first.");
       return;
     }
+
+    pushUndoSnapshot();
 
     onAddTask({
       projectId: parentTask.projectId,
@@ -331,117 +518,179 @@ export default function PlannerScheduleTable({
       actualEnd: "",
       plannedProgress: 0,
       actualProgress: 0,
-      dependencyIds: [],
-      dependencyRules: [],
       durationDays: 1,
       isMilestone: false,
       isManualLocked: false,
+      dependencyIds: [],
+      dependencyRules: [],
     });
 
     setCollapsedParents((prev) => ({
       ...prev,
       [targetTaskId]: false,
     }));
+
+    setLastActionText("Added subtask");
   }
 
   function handleDeleteRow(taskId) {
-    const confirmed = window.confirm("Delete this task row?");
+    const hasChildren = Boolean(childCountMap[taskId]);
+
+    const confirmed = window.confirm(
+      hasChildren
+        ? "This task has subtasks. Deleting it may also affect hierarchy. Continue?"
+        : "Delete this task row?"
+    );
+
     if (!confirmed) return;
+
+    pushUndoSnapshot();
+
     onDeleteTask(taskId);
+
     if (selectedRowId === taskId) {
       setSelectedRowId("");
     }
-  }
 
-  function handleCellKeyDown(e, taskId) {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      saveAllRows();
-      return;
-    }
-
-    if (e.key === "Enter") {
-      e.preventDefault();
-      saveRow(taskId);
-    }
+    setLastActionText("Deleted row");
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      onKeyDown={handleGridKeyDown}
+      tabIndex={0}
+    >
       <div className="border-b border-slate-200 px-3 py-3">
         <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <h3 className="text-sm font-semibold tracking-tight text-slate-900">
+            <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+              <GitBranch className="h-3.5 w-3.5" />
               Planning Grid
+            </div>
+
+            <h3 className="mt-2 text-sm font-semibold tracking-tight text-slate-900">
+              Schedule, subtasks, milestones, and dependencies
             </h3>
-            <p className="mt-0.5 text-[11px] text-slate-500">
-              Summary rows allow name edits, while leaf tasks can be assigned to sprints.
+
+            <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
+              Changes are auto-saved locally. Use Ctrl + Z inside the grid to
+              rollback the last change.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={handleAddRow}
-              className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
-            >
+            <ToolbarButton variant="primary" onClick={handleAddRow}>
               Add
-            </button>
-            <button
-              type="button"
-              onClick={handleInsertBelow}
-              className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700"
-            >
+            </ToolbarButton>
+
+            <ToolbarButton onClick={() => handleInsertBelow()}>
               Insert
-            </button>
-            <button
-              type="button"
-              onClick={() => handleAddSubtask(selectedRowId)}
-              className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700"
-            >
+            </ToolbarButton>
+
+            <ToolbarButton onClick={() => handleAddSubtask(selectedRowId)}>
               Subtask
-            </button>
-            <button
-              type="button"
-              onClick={saveAllRows}
-              className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700"
-            >
-              Save All
-            </button>
-            <button
-              type="button"
-              onClick={onRecalculate}
-              className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700"
-            >
+            </ToolbarButton>
+
+            <ToolbarButton onClick={expandAll}>Expand</ToolbarButton>
+
+            <ToolbarButton onClick={collapseAll}>Collapse</ToolbarButton>
+
+            <ToolbarButton onClick={handleUndo}>
+              <span className="inline-flex items-center gap-1">
+                <RotateCcw className="h-3.5 w-3.5" />
+                Undo
+              </span>
+            </ToolbarButton>
+
+            <ToolbarButton variant="blue" onClick={onRecalculate}>
               Recalc
-            </button>
+            </ToolbarButton>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-2 text-[10px] md:grid-cols-5">
+          <div className="rounded-xl bg-slate-50 px-3 py-2">
+            <span className="font-semibold text-slate-900">
+              {hierarchyStats.total}
+            </span>{" "}
+            <span className="text-slate-500">total rows</span>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 px-3 py-2">
+            <span className="font-semibold text-slate-900">
+              {hierarchyStats.summaryRows}
+            </span>{" "}
+            <span className="text-slate-500">summary rows</span>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 px-3 py-2">
+            <span className="font-semibold text-slate-900">
+              {hierarchyStats.leafRows}
+            </span>{" "}
+            <span className="text-slate-500">leaf tasks</span>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 px-3 py-2">
+            <span className="font-semibold text-slate-900">
+              {hierarchyStats.milestones}
+            </span>{" "}
+            <span className="text-slate-500">milestones</span>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 px-3 py-2">
+            <span className="font-semibold text-slate-900">
+              {lastActionText}
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-hidden">
         <table className="w-full table-fixed border-collapse text-xs">
+          <colgroup>
+            <col style={{ width: "2%" }} />
+            <col style={{ width: "4.5%" }} />
+            <col style={{ width: "25%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "4%" }} />
+            <col style={{ width: "5%" }} />
+            <col style={{ width: "7.5%" }} />
+            <col style={{ width: "7.5%" }} />
+            <col style={{ width: "6.5%" }} />
+            <col style={{ width: "6%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "4.5%" }} />
+            <col style={{ width: "4.5%" }} />
+          </colgroup>
+
           <thead className="bg-slate-50">
             <tr className="border-b border-slate-200">
-              <HeaderCell className="w-[3%]">#</HeaderCell>
-              <HeaderCell className="w-[5%]">WBS</HeaderCell>
-              <HeaderCell className="w-[21%]">Task</HeaderCell>
-              <HeaderCell className="w-[10%]">Sprint</HeaderCell>
-              <HeaderCell className="w-[6%]">Dur</HeaderCell>
-              <HeaderCell className="w-[9%]">Start</HeaderCell>
-              <HeaderCell className="w-[9%]">Finish</HeaderCell>
-              <HeaderCell className="w-[8%]">Pred</HeaderCell>
-              <HeaderCell className="w-[8%]">Owner</HeaderCell>
-              <HeaderCell className="w-[6%]">%</HeaderCell>
-              <HeaderCell className="w-[7%]">Status</HeaderCell>
-              <HeaderCell className="w-[4%]">!</HeaderCell>
-              <HeaderCell className="w-[14%]">Actions</HeaderCell>
+              <HeaderCell>#</HeaderCell>
+              <HeaderCell>WBS</HeaderCell>
+              <HeaderCell>Task</HeaderCell>
+              <HeaderCell>Sprint</HeaderCell>
+              <HeaderCell>MS</HeaderCell>
+              <HeaderCell>Dur</HeaderCell>
+              <HeaderCell>Start</HeaderCell>
+              <HeaderCell>Finish</HeaderCell>
+              <HeaderCell>Pred</HeaderCell>
+              <HeaderCell>Owner</HeaderCell>
+              <HeaderCell>%</HeaderCell>
+              <HeaderCell>Status</HeaderCell>
+              <HeaderCell>!</HeaderCell>
+              <HeaderCell>Act</HeaderCell>
             </tr>
           </thead>
 
           <tbody>
             {visibleTasks.map((task, index) => {
               const hasChildren = Boolean(childCountMap[task.id]);
+              const depth = getTaskDepth(task, taskById);
+              const wbs = getTaskWbs(task, index);
+              const dependencyText = getDependencyText(task, taskById);
+
               const draft = drafts[task.id] || {
                 title: task.title || "",
                 owner: task.owner || "",
@@ -465,6 +714,7 @@ export default function PlannerScheduleTable({
                 plannedStart: draft.plannedStart,
                 plannedEnd: draft.plannedEnd,
                 plannedProgress: draft.plannedProgress,
+                isMilestone: draft.isMilestone,
                 durationDays: draft.durationDays,
                 isManualLocked: draft.isManualLocked,
               };
@@ -475,12 +725,16 @@ export default function PlannerScheduleTable({
               const isSelected = selectedRowId === task.id;
               const isSummaryTask = Boolean(task.isSummaryTask || hasChildren);
               const isFlashing = flashTaskId === task.id;
+              const plannedProgress = Math.min(
+                100,
+                Math.max(0, Number(draft.plannedProgress || 0))
+              );
 
               return (
                 <tr
                   key={task.id}
-                  ref={(el) => {
-                    rowRefs.current[task.id] = el;
+                  ref={(element) => {
+                    rowRefs.current[task.id] = element;
                   }}
                   onClick={() => setSelectedRowId(task.id)}
                   className={`border-b border-slate-200 transition ${
@@ -493,47 +747,76 @@ export default function PlannerScheduleTable({
                       : "bg-white hover:bg-slate-50/60"
                   }`}
                 >
-                  <td className="px-1.5 py-1.5 align-top">{index + 1}</td>
-                  <td className="px-1.5 py-1.5 align-top text-slate-600">{task.wbs}</td>
+                  <td className="px-1 py-1.5 align-top text-[11px] text-slate-500">
+                    {index + 1}
+                  </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
+                    <span
+                      className={`inline-flex rounded-md px-1.5 py-1 text-[10px] font-semibold ${
+                        isSummaryTask
+                          ? "bg-slate-200 text-slate-700"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {wbs}
+                    </span>
+                  </td>
+
+                  <td className="px-1 py-1.5 align-top">
                     <div
                       className="flex items-center gap-1"
-                      style={{ paddingLeft: `${(task.wbs.split(".").length - 1) * 8}px` }}
+                      style={{ paddingLeft: `${depth * 10}px` }}
                     >
                       {hasChildren ? (
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={(event) => {
+                            event.stopPropagation();
                             toggleCollapse(task.id);
                           }}
-                          className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-slate-200 text-[10px] text-slate-600"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
                         >
-                          {collapsedParents[task.id] ? "+" : "-"}
+                          {collapsedParents[task.id] ? (
+                            <ChevronRight className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )}
                         </button>
                       ) : (
-                        <span className="inline-block w-3 shrink-0 text-slate-300">
+                        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-slate-300">
                           {task.parentTaskId ? "└" : ""}
                         </span>
                       )}
 
+                      {draft.isMilestone ? (
+                        <Milestone className="h-3.5 w-3.5 shrink-0 text-purple-600" />
+                      ) : hasChildren ? (
+                        <Rows3 className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                      ) : null}
+
                       <GridInput
                         value={draft.title}
                         readOnly={false}
-                        onKeyDown={(e) => handleCellKeyDown(e, task.id)}
-                        onChange={(e) => updateDraft(task.id, "title", e.target.value)}
-                        className={isSummaryTask ? "font-semibold" : ""}
+                        onChange={(event) =>
+                          updateDraft(task.id, "title", event.target.value)
+                        }
+                        className={
+                          isSummaryTask
+                            ? "font-semibold text-slate-900"
+                            : "text-slate-800"
+                        }
                       />
                     </div>
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
                     <GridSelect
                       value={draft.sprintId}
                       disabled={isSummaryTask || !selectedProjectId}
-                      onKeyDown={(e) => handleCellKeyDown(e, task.id)}
-                      onChange={(e) => updateDraft(task.id, "sprintId", e.target.value)}
+                      onChange={(event) =>
+                        updateDraft(task.id, "sprintId", event.target.value)
+                      }
                     >
                       <option value="">No Sprint</option>
                       {sprints.map((sprint) => (
@@ -544,74 +827,122 @@ export default function PlannerScheduleTable({
                     </GridSelect>
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
+                    <MilestoneCell
+                      checked={Boolean(draft.isMilestone)}
+                      disabled={isSummaryTask}
+                      onChange={(checked) =>
+                        updateDraft(task.id, "isMilestone", checked)
+                      }
+                    />
+                  </td>
+
+                  <td className="px-1 py-1.5 align-top">
                     <GridInput
                       type="number"
                       min="1"
                       readOnly={isSummaryTask}
                       value={draft.durationDays}
-                      onKeyDown={(e) => handleCellKeyDown(e, task.id)}
-                      onChange={(e) => updateDraft(task.id, "durationDays", e.target.value)}
+                      onChange={(event) =>
+                        updateDraft(
+                          task.id,
+                          "durationDays",
+                          event.target.value
+                        )
+                      }
                     />
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
                     <GridInput
                       type="date"
                       readOnly={isSummaryTask}
                       value={draft.plannedStart}
-                      onKeyDown={(e) => handleCellKeyDown(e, task.id)}
-                      onChange={(e) => updateDraft(task.id, "plannedStart", e.target.value)}
+                      onChange={(event) =>
+                        updateDraft(
+                          task.id,
+                          "plannedStart",
+                          event.target.value
+                        )
+                      }
                     />
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
                     <GridInput
                       type="date"
                       readOnly={isSummaryTask}
                       value={draft.plannedEnd}
-                      onKeyDown={(e) => handleCellKeyDown(e, task.id)}
-                      onChange={(e) => updateDraft(task.id, "plannedEnd", e.target.value)}
+                      onChange={(event) =>
+                        updateDraft(task.id, "plannedEnd", event.target.value)
+                      }
                     />
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
                     <GridInput
                       value={draft.predecessorInput}
                       readOnly={isSummaryTask}
-                      onKeyDown={(e) => handleCellKeyDown(e, task.id)}
-                      onChange={(e) => updateDraft(task.id, "predecessorInput", e.target.value)}
-                      placeholder="1,3"
+                      onChange={(event) =>
+                        updateDraft(
+                          task.id,
+                          "predecessorInput",
+                          event.target.value
+                        )
+                      }
+                      placeholder={dependencyText || "1,3"}
+                      title={
+                        dependencyText
+                          ? `Current predecessors: ${dependencyText}`
+                          : "Enter predecessor WBS or row number"
+                      }
                     />
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
                     <GridInput
                       value={draft.owner}
                       readOnly={false}
-                      onKeyDown={(e) => handleCellKeyDown(e, task.id)}
-                      onChange={(e) => updateDraft(task.id, "owner", e.target.value)}
+                      onChange={(event) =>
+                        updateDraft(task.id, "owner", event.target.value)
+                      }
                     />
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
                     <GridInput
                       type="number"
                       min="0"
                       max="100"
                       readOnly={isSummaryTask}
                       value={draft.plannedProgress}
-                      onKeyDown={(e) => handleCellKeyDown(e, task.id)}
-                      onChange={(e) => updateDraft(task.id, "plannedProgress", e.target.value)}
+                      onChange={(event) =>
+                        updateDraft(
+                          task.id,
+                          "plannedProgress",
+                          event.target.value
+                        )
+                      }
                     />
+
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full ${progressColor(
+                          draft.status
+                        )}`}
+                        style={{ width: `${plannedProgress}%` }}
+                      />
+                    </div>
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
                     <GridSelect
                       value={draft.status}
                       disabled={isSummaryTask}
-                      onKeyDown={(e) => handleCellKeyDown(e, task.id)}
-                      onChange={(e) => updateDraft(task.id, "status", e.target.value)}
+                      className={statusSelectClass(draft.status)}
+                      onChange={(event) =>
+                        updateDraft(task.id, "status", event.target.value)
+                      }
                     >
                       <option>Not Started</option>
                       <option>In Progress</option>
@@ -620,9 +951,11 @@ export default function PlannerScheduleTable({
                     </GridSelect>
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
+                  <td className="px-1 py-1.5 align-top">
                     {topFix ? (
-                      <div title={`${topFix.message} Quick fix: ${topFix.fix}`}>
+                      <div
+                        title={`${topFix.message} Quick fix: ${topFix.fix}`}
+                      >
                         <span
                           className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-medium ${issueBadgeClass(
                             topFix.severity
@@ -638,56 +971,45 @@ export default function PlannerScheduleTable({
                     )}
                   </td>
 
-                  <td className="px-1.5 py-1.5 align-top">
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          saveRow(task.id);
-                        }}
-                        className="rounded-md bg-slate-900 px-2.5 py-1.5 text-[10px] font-medium text-white"
-                      >
-                        Save
-                      </button>
-
+                  <td className="px-1 py-1.5 align-top">
+                    <div className="flex items-center justify-end gap-1">
                       {!isSummaryTask ? (
-                        <button
+                        <IconActionButton
                           type="button"
                           title={draft.isManualLocked ? "Locked" : "Auto"}
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={(event) => {
+                            event.stopPropagation();
                             toggleManualLock(task.id);
                           }}
-                          className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[10px] font-medium ${
+                          className={
                             draft.isManualLocked
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-slate-100 text-slate-700"
-                          }`}
+                              ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          }
                         >
                           {draft.isManualLocked ? (
-                            <Lock className="h-3 w-3" />
+                            <Lock className="h-3.5 w-3.5" />
                           ) : (
-                            <Unlock className="h-3 w-3" />
+                            <Unlock className="h-3.5 w-3.5" />
                           )}
-                          <span>{draft.isManualLocked ? "Lock" : "Auto"}</span>
-                        </button>
+                        </IconActionButton>
                       ) : (
-                        <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
-                          Rollup
+                        <span className="inline-flex h-6 items-center rounded-md bg-slate-100 px-1.5 text-[9px] font-medium text-slate-600">
+                          Roll
                         </span>
                       )}
 
                       <IconActionButton
                         type="button"
                         title={isSummaryTask ? "Add subtask" : "Insert below"}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={(event) => {
+                          event.stopPropagation();
+
                           if (isSummaryTask) {
                             handleAddSubtask(task.id);
                           } else {
                             setSelectedRowId(task.id);
-                            handleInsertBelow();
+                            handleInsertBelow(task.id);
                           }
                         }}
                         className="bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -698,8 +1020,8 @@ export default function PlannerScheduleTable({
                       <IconActionButton
                         type="button"
                         title="Delete row"
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={(event) => {
+                          event.stopPropagation();
                           handleDeleteRow(task.id);
                         }}
                         className="bg-red-50 text-red-700 hover:bg-red-100"
@@ -714,7 +1036,10 @@ export default function PlannerScheduleTable({
 
             {visibleTasks.length === 0 && (
               <tr>
-                <td colSpan="13" className="px-4 py-8 text-center text-sm text-slate-500">
+                <td
+                  colSpan="14"
+                  className="px-4 py-8 text-center text-sm text-slate-500"
+                >
                   No plan rows found.
                 </td>
               </tr>
@@ -725,10 +1050,25 @@ export default function PlannerScheduleTable({
 
       <div className="border-t border-slate-200 bg-slate-50/60 px-3 py-2">
         <div className="grid gap-1 text-[10px] text-slate-600 md:grid-cols-4">
-          <div><span className="font-medium text-slate-800">Sprint column:</span> assign leaf tasks to a sprint.</div>
-          <div><span className="font-medium text-slate-800">Summary rows:</span> title and owner editable.</div>
-          <div><span className="font-medium text-slate-800">Rollup fields:</span> dates, duration, %, status.</div>
-          <div><span className="font-medium text-slate-800">Plus button:</span> adds subtask on summary rows.</div>
+          <div>
+            <span className="font-medium text-slate-800">Auto-save:</span>{" "}
+            every change is applied immediately.
+          </div>
+
+          <div>
+            <span className="font-medium text-slate-800">Undo:</span> Ctrl + Z
+            rolls back the last change.
+          </div>
+
+          <div>
+            <span className="font-medium text-slate-800">Rollup:</span> parent
+            rows are calculated.
+          </div>
+
+          <div>
+            <span className="font-medium text-slate-800">Actions:</span> lock,
+            insert/subtask, delete.
+          </div>
         </div>
       </div>
     </div>

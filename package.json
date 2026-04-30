@@ -9,12 +9,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.0",
     "@tailwindcss/vite": "^4.2.2",
     "date-fns": "^4.1.0",
+    "fast-xml-parser": "^5.7.2",
     "lucide-react": "^1.8.0",
+    "papaparse": "^5.5.3",
+    "pptxgenjs": "^4.0.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.8.2",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

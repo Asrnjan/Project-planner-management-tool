@@ -5,6 +5,7 @@ import {
   PauseCircle,
   PlayCircle,
   CircleUserRound,
+  Milestone,
 } from "lucide-react";
 
 const columns = ["Not Started", "In Progress", "Done", "Blocked"];
@@ -96,9 +97,19 @@ function TaskCard({ task, onDragStart, onQuickMove }) {
           <div className="truncate text-sm font-medium text-slate-900">
             {task.title}
           </div>
-          <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-            <CircleUserRound className="h-3.5 w-3.5" />
-            {task.owner || "Unassigned"}
+
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <div className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+              <CircleUserRound className="h-3.5 w-3.5" />
+              {task.owner || "Unassigned"}
+            </div>
+
+            {task.isMilestone ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">
+                <Milestone className="h-3 w-3" />
+                Milestone
+              </span>
+            ) : null}
           </div>
         </div>
 
