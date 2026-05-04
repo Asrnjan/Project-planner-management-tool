@@ -22,33 +22,58 @@ const EMPTY_FORM = {
   projectManager: "",
   clientDepartment: "",
   overallStatus: "Green",
+
   executiveSummary: "",
   leadershipMessage: "",
   overallHealthNotes: "",
+
   plannedProgress: 0,
   actualProgress: 0,
   scheduleVariance: 0,
   completedTasks: 0,
   inProgressTasks: 0,
   blockedTasks: 0,
+
   milestonesCompleted: "",
   milestonesNextWeek: "",
   achievements: "",
   nextWeekPlan: "",
+
+  currentStatus: "",
+  majorMilestoneAchieved: "",
+  upcomingMilestone: "",
+  potentialRisk: "",
+  outstandingIssuesJustification: "",
+  challengesFaced: "",
+  teamMembers: "",
+
+  pocScopeAcceptanceStatus: "",
+  pocDevelopmentStatus: "",
+  pocInternalDemoStatus: "",
+  pocFinalDemoStatus: "",
+  pocNextSteps: "",
+
+  proposalStatus: "",
+  documentationStatus: "",
+
   risks: "",
   issues: "",
   mitigationPlan: "",
+
   escalationRequired: "No",
   escalationDetails: "",
+
   decisionRequired: "No",
   decisionDetails: "",
   decisionImpact: "",
   decisionRequiredBy: "",
+
   budgetStatus: "On Track",
   plannedBudget: "",
   actualSpend: "",
   forecastedSpend: "",
   costVariance: "",
+
   timelineNotes: "",
   supportNeeded: "",
   pmRemarks: "",
@@ -60,15 +85,8 @@ function safeNumber(value) {
   return Number.isNaN(number) ? 0 : number;
 }
 
-function splitLines(value) {
-  return String(value || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
 function cleanFileName(value) {
-  return String(value || "weekly-ceo-report")
+  return String(value || "weekly-manager-report")
     .replace(/[^a-z0-9-_]/gi, "_")
     .toLowerCase();
 }
@@ -125,7 +143,7 @@ function calculateAutoStatus(form) {
   };
 }
 
-function getCeoActionSummary(report) {
+function getManagerActionSummary(report) {
   const planned = safeNumber(report.plannedProgress);
   const actual = safeNumber(report.actualProgress);
   const variance = actual - planned;
@@ -142,12 +160,12 @@ function getCeoActionSummary(report) {
       )}%, which may impact the project timeline.`;
     }
 
-    return "Immediate leadership attention is required due to critical project health indicators.";
+    return "Immediate management attention is required due to critical project health indicators.";
   }
 
   if (report.overallStatus === "Amber") {
     if (report.decisionRequired === "Yes") {
-      return "Leadership decision is required to avoid timeline or delivery impact.";
+      return "Management decision is required to avoid timeline or delivery impact.";
     }
 
     if (report.escalationRequired === "Yes") {
@@ -157,7 +175,7 @@ function getCeoActionSummary(report) {
     return "Project is generally progressing but has risk indicators that should be monitored closely.";
   }
 
-  return "No immediate leadership intervention required. Project is currently tracking within acceptable limits.";
+  return "No immediate management intervention required. Project is currently tracking within acceptable limits.";
 }
 
 function Field({ label, children }) {
@@ -222,6 +240,7 @@ function CompactMetric({ label, value, icon: Icon, tone = "slate" }) {
           </div>
           <div className="text-base font-semibold text-slate-900">{value}</div>
         </div>
+
         <div
           className={`flex h-8 w-8 items-center justify-center rounded-xl ${toneClass}`}
         >
@@ -355,7 +374,7 @@ function addPptFooter(slide, report) {
     line: { color: "CBD5E1", width: 1 },
   });
 
-  slide.addText("Weekly CEO Project Report", {
+  slide.addText("Weekly Manager Project Report", {
     x: 0.45,
     y: 7.17,
     w: 5,
@@ -486,39 +505,6 @@ function addPptBullets(slide, value, x, y, w, h, maxItems = 5) {
   });
 }
 
-function addPptNumberedList(slide, value, x, y, w, h, maxItems = 5) {
-  const lines = pptLines(value).slice(0, maxItems);
-  const lineHeight = Math.min(0.38, h / Math.max(lines.length, 1));
-
-  lines.forEach((line, index) => {
-    const itemY = y + index * lineHeight;
-
-    slide.addText(`${index + 1}.`, {
-      x,
-      y: itemY,
-      w: 0.32,
-      h: 0.25,
-      fontSize: 11.5,
-      bold: true,
-      color: "111827",
-      margin: 0,
-    });
-
-    slide.addText(line, {
-      x: x + 0.38,
-      y: itemY,
-      w: w - 0.38,
-      h: lineHeight,
-      fontSize: 11.5,
-      color: "111827",
-      fit: "shrink",
-      valign: "top",
-      margin: 0,
-      fontFace: "Aptos",
-    });
-  });
-}
-
 function addProgressBar(slide, x, y, w, h, label, value, color = "0F172A") {
   const finalValue = Math.max(0, Math.min(100, safeNumber(value)));
   const filledWidth = (w * finalValue) / 100;
@@ -574,7 +560,7 @@ function addTwoColumnPanel(slide, leftTitle, leftValue, rightTitle, rightValue) 
   addPptBullets(slide, rightValue, 6.95, 1.78, 5.35, 4.15, 7);
 }
 
-function addMetadataBullets(slide, items, x, y, w, h) {
+function addMetadataBullets(slide, items, x, y, w) {
   const lineHeight = 0.34;
 
   items.forEach((item, index) => {
@@ -605,13 +591,13 @@ function addMetadataBullets(slide, items, x, y, w, h) {
   });
 }
 
-async function generateCeoPpt({ report, project }) {
+async function generateManagerPpt({ report, project }) {
   const pptx = new pptxgen();
 
   pptx.layout = "LAYOUT_WIDE";
   pptx.author = report.preparedBy || report.projectManager || "Project Manager";
-  pptx.subject = "Weekly CEO Project Report";
-  pptx.title = `${project?.name || "Project"} Weekly CEO Report`;
+  pptx.subject = "Weekly Manager Project Report";
+  pptx.title = `${project?.name || "Project"} Weekly Manager Report`;
   pptx.company = "Company";
   pptx.theme = {
     headFontFace: "Aptos Display",
@@ -624,13 +610,13 @@ async function generateCeoPpt({ report, project }) {
   const actualProgress = safeNumber(report.actualProgress);
   const variance = safeNumber(report.scheduleVariance);
   const blocked = safeNumber(report.blockedTasks);
-  const ceoActionSummary = getCeoActionSummary(report);
+  const managerActionSummary = getManagerActionSummary(report);
 
   let slide = pptx.addSlide();
 
   slide.background = { color: "0F172A" };
 
-  slide.addText("Weekly CEO Project Report", {
+  slide.addText("Weekly Manager Project Report", {
     x: 0.6,
     y: 0.55,
     w: 7.5,
@@ -705,18 +691,21 @@ async function generateCeoPpt({ report, project }) {
     line: { color: "334155" },
   });
 
-  slide.addText(pptText(report.executiveSummary, "No executive summary provided."), {
-    x: 0.85,
-    y: 3.3,
-    w: 11.55,
-    h: 0.85,
-    fontSize: 18,
-    bold: true,
-    color: "FFFFFF",
-    fit: "shrink",
-    valign: "mid",
-    margin: 0.05,
-  });
+  slide.addText(
+    pptText(report.executiveSummary, "No executive summary provided."),
+    {
+      x: 0.85,
+      y: 3.3,
+      w: 11.55,
+      h: 0.85,
+      fontSize: 18,
+      bold: true,
+      color: "FFFFFF",
+      fit: "shrink",
+      valign: "mid",
+      margin: 0.05,
+    }
+  );
 
   addPptKpiCard(slide, 0.6, 5.05, 2.15, 0.95, "Planned", `${plannedProgress}%`);
   addPptKpiCard(slide, 3.05, 5.05, 2.15, 0.95, "Actual", `${actualProgress}%`, {
@@ -734,7 +723,15 @@ async function generateCeoPpt({ report, project }) {
     valueColor: blocked > 0 ? "991B1B" : "111827",
     border: blocked > 0 ? "FCA5A5" : "CBD5E1",
   });
-  addPptKpiCard(slide, 10.4, 5.05, 2.15, 0.95, "Confidence", report.confidenceLevel || "-");
+  addPptKpiCard(
+    slide,
+    10.4,
+    5.05,
+    2.15,
+    0.95,
+    "Confidence",
+    report.confidenceLevel || "-"
+  );
 
   slide.addText(report.reportDate || new Date().toLocaleDateString(), {
     x: 10.45,
@@ -750,8 +747,8 @@ async function generateCeoPpt({ report, project }) {
   slide = pptx.addSlide();
   addPptHeader(
     slide,
-    "CEO Dashboard Snapshot",
-    "High-level view of project health, progress, execution, and leadership attention."
+    "Manager Dashboard Snapshot",
+    "High-level view of project health, progress, execution, and management attention."
   );
 
   slide.addShape("roundRect", {
@@ -790,12 +787,38 @@ async function generateCeoPpt({ report, project }) {
 
   addPptKpiCard(slide, 3.55, 1.2, 1.95, 1.05, "Planned", `${plannedProgress}%`);
   addPptKpiCard(slide, 5.75, 1.2, 1.95, 1.05, "Actual", `${actualProgress}%`);
-  addPptKpiCard(slide, 7.95, 1.2, 1.95, 1.05, "Completed", safeNumber(report.completedTasks));
+  addPptKpiCard(
+    slide,
+    7.95,
+    1.2,
+    1.95,
+    1.05,
+    "Completed",
+    safeNumber(report.completedTasks)
+  );
   addPptKpiCard(slide, 10.15, 1.2, 1.95, 1.05, "Blocked", blocked);
 
   addPptSectionTitle(slide, "Progress View", 0.6, 2.85, 5.4);
-  addProgressBar(slide, 0.75, 3.45, 4.5, 0.18, "Planned Progress", plannedProgress, "475569");
-  addProgressBar(slide, 0.75, 4.15, 4.5, 0.18, "Actual Progress", actualProgress, "16A34A");
+  addProgressBar(
+    slide,
+    0.75,
+    3.45,
+    4.5,
+    0.18,
+    "Planned Progress",
+    plannedProgress,
+    "475569"
+  );
+  addProgressBar(
+    slide,
+    0.75,
+    4.15,
+    4.5,
+    0.18,
+    "Actual Progress",
+    actualProgress,
+    "16A34A"
+  );
 
   addPptSectionTitle(slide, "Leadership Message", 6.75, 2.85, 5.6);
   addPptParagraph(slide, report.leadershipMessage, 6.9, 3.32, 5.45, 1.35, 12);
@@ -803,8 +826,92 @@ async function generateCeoPpt({ report, project }) {
   addPptSectionTitle(slide, "Overall Health Notes", 0.6, 5.05, 5.4);
   addPptBullets(slide, report.overallHealthNotes, 0.75, 5.5, 5.45, 1, 3);
 
-  addPptSectionTitle(slide, "CEO Attention Required", 6.75, 5.05, 5.6);
-  addPptBullets(slide, ceoActionSummary, 6.9, 5.5, 5.45, 1, 3);
+  addPptSectionTitle(slide, "Management Attention Required", 6.75, 5.05, 5.6);
+  addPptBullets(slide, managerActionSummary, 6.9, 5.5, 5.45, 1, 3);
+
+  addPptFooter(slide, report);
+
+  slide = pptx.addSlide();
+  addPptHeader(
+    slide,
+    "Project Update Summary",
+    "Status, milestones, risks, issues, challenges, achievements, and team information."
+  );
+
+  addPptSectionTitle(slide, "Current Status", 0.6, 1.2, 3.8);
+  addPptBullets(
+    slide,
+    report.currentStatus || report.executiveSummary,
+    0.75,
+    1.68,
+    3.65,
+    1.05,
+    4
+  );
+
+  addPptSectionTitle(slide, "Major Milestone Achieved", 4.75, 1.2, 3.8);
+  addPptBullets(
+    slide,
+    report.majorMilestoneAchieved || report.milestonesCompleted,
+    4.9,
+    1.68,
+    3.65,
+    1.05,
+    4
+  );
+
+  addPptSectionTitle(slide, "Upcoming Milestone", 8.9, 1.2, 3.7);
+  addPptBullets(
+    slide,
+    report.upcomingMilestone || report.milestonesNextWeek,
+    9.05,
+    1.68,
+    3.55,
+    1.05,
+    4
+  );
+
+  addPptSectionTitle(slide, "Potential Risk", 0.6, 3.1, 3.8);
+  addPptBullets(
+    slide,
+    report.potentialRisk || report.risks,
+    0.75,
+    3.58,
+    3.65,
+    1.05,
+    4
+  );
+
+  addPptSectionTitle(slide, "Outstanding Issues with Justification", 4.75, 3.1, 3.8);
+  addPptBullets(
+    slide,
+    report.outstandingIssuesJustification || report.issues,
+    4.9,
+    3.58,
+    3.65,
+    1.05,
+    4
+  );
+
+  addPptSectionTitle(slide, "Challenges Faced by Team", 8.9, 3.1, 3.7);
+  addPptBullets(
+    slide,
+    report.challengesFaced || report.supportNeeded,
+    9.05,
+    3.58,
+    3.55,
+    1.05,
+    4
+  );
+
+  addPptSectionTitle(slide, "Achievements", 0.6, 5.0, 3.8);
+  addPptBullets(slide, report.achievements, 0.75, 5.48, 3.65, 1.05, 4);
+
+  addPptSectionTitle(slide, "Team Members", 4.75, 5.0, 3.8);
+  addPptBullets(slide, report.teamMembers, 4.9, 5.48, 3.65, 1.05, 4);
+
+  addPptSectionTitle(slide, "Manager Remarks", 8.9, 5.0, 3.7);
+  addPptBullets(slide, report.pmRemarks, 9.05, 5.48, 3.55, 1.05, 4);
 
   addPptFooter(slide, report);
 
@@ -870,15 +977,84 @@ async function generateCeoPpt({ report, project }) {
   slide = pptx.addSlide();
   addPptHeader(
     slide,
-    "Risks, Issues, Decisions, and Escalations",
-    "Critical items that may impact delivery, timeline, cost, or leadership decisions."
+    "POC and Documentation Update",
+    "Proof of concept progress, proposal readiness, and documentation status."
   );
 
-  addPptKpiCard(slide, 0.6, 1.15, 2.2, 0.78, "Escalation", report.escalationRequired || "No");
-  addPptKpiCard(slide, 3.05, 1.15, 2.2, 0.78, "Decision", report.decisionRequired || "No");
-  addPptKpiCard(slide, 5.5, 1.15, 2.2, 0.78, "Required By", report.decisionRequiredBy || "-");
+  addPptSectionTitle(slide, "Scope Definition & Acceptance Criteria Status", 0.6, 1.15, 5.7);
+  addPptBullets(slide, report.pocScopeAcceptanceStatus, 0.75, 1.62, 5.55, 1.0, 4);
+
+  addPptSectionTitle(slide, "POC Development", 6.8, 1.15, 5.5);
+  addPptBullets(slide, report.pocDevelopmentStatus, 6.95, 1.62, 5.4, 1.0, 4);
+
+  addPptSectionTitle(slide, "Internal Demo & Feedback Incorporation", 0.6, 3.0, 5.7);
+  addPptBullets(slide, report.pocInternalDemoStatus, 0.75, 3.47, 5.55, 1.0, 4);
+
+  addPptSectionTitle(slide, "POC Final Demo", 6.8, 3.0, 5.5);
+  addPptBullets(slide, report.pocFinalDemoStatus, 6.95, 3.47, 5.4, 1.0, 4);
+
+  addPptSectionTitle(slide, "POC Next Steps", 0.6, 4.85, 5.7);
+  addPptBullets(slide, report.pocNextSteps, 0.75, 5.32, 5.55, 1.0, 4);
+
+  addPptSectionTitle(slide, "Proposal & Documentation Status", 6.8, 4.85, 5.5);
+  addPptBullets(
+    slide,
+    `Proposal Status: ${pptText(report.proposalStatus)}\nDocumentation Status: ${pptText(
+      report.documentationStatus
+    )}`,
+    6.95,
+    5.32,
+    5.4,
+    1.0,
+    4
+  );
+
+  addPptFooter(slide, report);
+
+  slide = pptx.addSlide();
+  addPptHeader(
+    slide,
+    "Risks, Issues, Decisions, and Escalations",
+    "Critical items that may impact delivery, timeline, cost, or management decisions."
+  );
+
+  addPptKpiCard(
+    slide,
+    0.6,
+    1.15,
+    2.2,
+    0.78,
+    "Escalation",
+    report.escalationRequired || "No"
+  );
+  addPptKpiCard(
+    slide,
+    3.05,
+    1.15,
+    2.2,
+    0.78,
+    "Decision",
+    report.decisionRequired || "No"
+  );
+  addPptKpiCard(
+    slide,
+    5.5,
+    1.15,
+    2.2,
+    0.78,
+    "Required By",
+    report.decisionRequiredBy || "-"
+  );
   addPptKpiCard(slide, 7.95, 1.15, 2.2, 0.78, "Blocked", blocked);
-  addPptKpiCard(slide, 10.4, 1.15, 2.2, 0.78, "Budget", report.budgetStatus || "-");
+  addPptKpiCard(
+    slide,
+    10.4,
+    1.15,
+    2.2,
+    0.78,
+    "Budget",
+    report.budgetStatus || "-"
+  );
 
   addPptSectionTitle(slide, "Top Risks", 0.6, 2.45, 3.55);
   addPptBullets(slide, report.risks, 0.75, 2.92, 3.45, 1.65, 4);
@@ -889,8 +1065,16 @@ async function generateCeoPpt({ report, project }) {
   addPptSectionTitle(slide, "Mitigation Plan", 8.7, 2.45, 3.55);
   addPptBullets(slide, report.mitigationPlan, 8.85, 2.92, 3.45, 1.65, 4);
 
-  addPptSectionTitle(slide, "Leadership Decision Required", 0.6, 5.05, 5.7);
-  addPptBullets(slide, report.decisionDetails || report.escalationDetails, 0.75, 5.5, 5.6, 1, 3);
+  addPptSectionTitle(slide, "Management Decision Required", 0.6, 5.05, 5.7);
+  addPptBullets(
+    slide,
+    report.decisionDetails || report.escalationDetails,
+    0.75,
+    5.5,
+    5.6,
+    1,
+    3
+  );
 
   addPptSectionTitle(slide, "Impact if Delayed", 6.8, 5.05, 5.5);
   addPptBullets(slide, report.decisionImpact, 6.95, 5.5, 5.45, 1, 3);
@@ -904,10 +1088,42 @@ async function generateCeoPpt({ report, project }) {
     "Commercial position, timeline view, and support required for closure."
   );
 
-  addPptKpiCard(slide, 0.6, 1.15, 2.45, 0.85, "Budget Status", report.budgetStatus || "-");
-  addPptKpiCard(slide, 3.3, 1.15, 2.45, 0.85, "Planned Budget", report.plannedBudget || "-");
-  addPptKpiCard(slide, 6, 1.15, 2.45, 0.85, "Actual Spend", report.actualSpend || "-");
-  addPptKpiCard(slide, 8.7, 1.15, 2.45, 0.85, "Cost Variance", report.costVariance || "-");
+  addPptKpiCard(
+    slide,
+    0.6,
+    1.15,
+    2.45,
+    0.85,
+    "Budget Status",
+    report.budgetStatus || "-"
+  );
+  addPptKpiCard(
+    slide,
+    3.3,
+    1.15,
+    2.45,
+    0.85,
+    "Planned Budget",
+    report.plannedBudget || "-"
+  );
+  addPptKpiCard(
+    slide,
+    6,
+    1.15,
+    2.45,
+    0.85,
+    "Actual Spend",
+    report.actualSpend || "-"
+  );
+  addPptKpiCard(
+    slide,
+    8.7,
+    1.15,
+    2.45,
+    0.85,
+    "Cost Variance",
+    report.costVariance || "-"
+  );
 
   addPptSectionTitle(slide, "Timeline Notes", 0.6, 2.65, 5.5);
   addPptBullets(slide, report.timelineNotes, 0.75, 3.12, 5.45, 1.45, 4);
@@ -951,15 +1167,14 @@ async function generateCeoPpt({ report, project }) {
     ],
     6.95,
     4.85,
-    5.45,
-    1.4
+    5.45
   );
 
   addPptFooter(slide, report);
 
   const fileName = `${cleanFileName(project?.name)}-${cleanFileName(
     report.reportingWeek
-  )}-ceo-weekly-report.pptx`;
+  )}-manager-weekly-report.pptx`;
 
   await pptx.writeFile({ fileName });
 }
@@ -996,16 +1211,16 @@ export default function WeeklyCeoReportView({
   const calculated = useMemo(() => {
     const total = projectTasks.length;
 
-    const completed = projectTasks.filter(
-      (task) => task.status === "Done"
+    const completed = projectTasks.filter((task) =>
+      ["Done", "Completed", "Closed"].includes(task.status)
     ).length;
 
-    const inProgress = projectTasks.filter(
-      (task) => task.status === "In Progress"
+    const inProgress = projectTasks.filter((task) =>
+      ["In Progress", "Ongoing"].includes(task.status)
     ).length;
 
-    const blocked = projectTasks.filter(
-      (task) => task.status === "Blocked"
+    const blocked = projectTasks.filter((task) =>
+      ["Blocked", "On Hold"].includes(task.status)
     ).length;
 
     const plannedAvg = total
@@ -1146,10 +1361,10 @@ export default function WeeklyCeoReportView({
 
     if (editingReportId) {
       onUpdateReport(editingReportId, payload);
-      setMessage("Weekly CEO report updated successfully.");
+      setMessage("Weekly manager report updated successfully.");
     } else {
       onAddReport(payload);
-      setMessage("Weekly CEO report submitted successfully.");
+      setMessage("Weekly manager report submitted successfully.");
     }
 
     resetForm();
@@ -1160,13 +1375,16 @@ export default function WeeklyCeoReportView({
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
           <FileText className="h-4 w-4" />
-          Weekly CEO Report
+          Weekly Manager Report
         </div>
+
         <h3 className="mt-2 text-lg font-semibold tracking-tight text-slate-900">
           Select a project first
         </h3>
+
         <p className="mt-1 text-sm leading-6 text-slate-500">
-          Weekly CEO report submission is available only for a selected project.
+          Weekly manager report submission is available only for a selected
+          project.
         </p>
       </section>
     );
@@ -1179,7 +1397,7 @@ export default function WeeklyCeoReportView({
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
               <FileText className="h-3.5 w-3.5" />
-              Weekly CEO Report
+              Weekly Manager Report
             </div>
 
             <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-900">
@@ -1187,8 +1405,9 @@ export default function WeeklyCeoReportView({
             </h3>
 
             <p className="mt-1 text-sm text-slate-500">
-              One compact weekly form for CEO-level status reporting and PPT
-              generation.
+              One compact weekly form for manager-level status reporting,
+              centralized PPT reporting, POC tracking, proposals, and
+              documentation updates.
             </p>
           </div>
 
@@ -1213,18 +1432,21 @@ export default function WeeklyCeoReportView({
           value={`${calculated.plannedAvg}%`}
           icon={BarChart3}
         />
+
         <CompactMetric
           label="Actual"
           value={`${calculated.actualAvg}%`}
           icon={Gauge}
           tone="green"
         />
+
         <CompactMetric
           label="Completed"
           value={calculated.completed}
           icon={CheckCircle2}
           tone="green"
         />
+
         <CompactMetric
           label="Blocked"
           value={calculated.blocked}
@@ -1242,9 +1464,10 @@ export default function WeeklyCeoReportView({
             <div>
               <h4 className="text-sm font-semibold text-slate-900">
                 {editingReportId
-                  ? "Edit Weekly Report"
-                  : "Weekly Report Submission Form"}
+                  ? "Edit Weekly Manager Report"
+                  : "Weekly Manager Report Submission Form"}
               </h4>
+
               <p className="text-xs text-slate-500">
                 Fill the required sections and submit from the bottom of this
                 form.
@@ -1330,7 +1553,7 @@ export default function WeeklyCeoReportView({
                 onChange={(event) =>
                   updateField("clientDepartment", event.target.value)
                 }
-                placeholder="Client or dept."
+                placeholder="Client or department"
               />
             </Field>
           </div>
@@ -1339,7 +1562,7 @@ export default function WeeklyCeoReportView({
         <FormSection
           sectionKey="summary"
           title="2. Executive Summary"
-          subtitle="Main message for CEO and leadership."
+          subtitle="Main message for management and leadership."
           openSection={openSection}
           onOpenSection={setOpenSection}
         >
@@ -1351,7 +1574,7 @@ export default function WeeklyCeoReportView({
                 onChange={(event) =>
                   updateField("executiveSummary", event.target.value)
                 }
-                placeholder="CEO-level summary"
+                placeholder="Management-level summary"
               />
             </Field>
 
@@ -1380,9 +1603,207 @@ export default function WeeklyCeoReportView({
         </FormSection>
 
         <FormSection
+          sectionKey="centralized"
+          title="3. Centralized PPT Project Update"
+          subtitle="These fields feed the centralized project-wise PPT slides."
+          openSection={openSection}
+          onOpenSection={setOpenSection}
+        >
+          <div className="grid gap-3 xl:grid-cols-2">
+            <Field label="Current Status">
+              <TextArea
+                rows={3}
+                value={form.currentStatus}
+                onChange={(event) =>
+                  updateField("currentStatus", event.target.value)
+                }
+                placeholder="Current status of the project"
+              />
+            </Field>
+
+            <Field label="Major Milestone Achieved">
+              <TextArea
+                rows={3}
+                value={form.majorMilestoneAchieved}
+                onChange={(event) =>
+                  updateField("majorMilestoneAchieved", event.target.value)
+                }
+                placeholder="Major milestone achieved"
+              />
+            </Field>
+
+            <Field label="Upcoming Milestone">
+              <TextArea
+                rows={3}
+                value={form.upcomingMilestone}
+                onChange={(event) =>
+                  updateField("upcomingMilestone", event.target.value)
+                }
+                placeholder="Upcoming milestone"
+              />
+            </Field>
+
+            <Field label="Potential Risk">
+              <TextArea
+                rows={3}
+                value={form.potentialRisk}
+                onChange={(event) =>
+                  updateField("potentialRisk", event.target.value)
+                }
+                placeholder="Potential project risk"
+              />
+            </Field>
+
+            <Field label="Outstanding Issues with Justification">
+              <TextArea
+                rows={3}
+                value={form.outstandingIssuesJustification}
+                onChange={(event) =>
+                  updateField(
+                    "outstandingIssuesJustification",
+                    event.target.value
+                  )
+                }
+                placeholder="Outstanding issue and why it exists"
+              />
+            </Field>
+
+            <Field label="Challenges Faced by Team">
+              <TextArea
+                rows={3}
+                value={form.challengesFaced}
+                onChange={(event) =>
+                  updateField("challengesFaced", event.target.value)
+                }
+                placeholder="Team challenges"
+              />
+            </Field>
+
+            <Field label="Achievements">
+              <TextArea
+                rows={3}
+                value={form.achievements}
+                onChange={(event) =>
+                  updateField("achievements", event.target.value)
+                }
+                placeholder="Project achievements"
+              />
+            </Field>
+
+            <Field label="Team Members">
+              <TextArea
+                rows={3}
+                value={form.teamMembers}
+                onChange={(event) =>
+                  updateField("teamMembers", event.target.value)
+                }
+                placeholder="Team members involved"
+              />
+            </Field>
+          </div>
+        </FormSection>
+
+        <FormSection
+          sectionKey="poc"
+          title="4. Proof of Concept Updates"
+          subtitle="These fields feed the consolidated POC slide."
+          openSection={openSection}
+          onOpenSection={setOpenSection}
+        >
+          <div className="grid gap-3 xl:grid-cols-2">
+            <Field label="Scope Definition & Acceptance Criteria Status">
+              <TextArea
+                rows={3}
+                value={form.pocScopeAcceptanceStatus}
+                onChange={(event) =>
+                  updateField("pocScopeAcceptanceStatus", event.target.value)
+                }
+                placeholder="Scope, requirements, success criteria, and acceptance status"
+              />
+            </Field>
+
+            <Field label="POC Development">
+              <TextArea
+                rows={3}
+                value={form.pocDevelopmentStatus}
+                onChange={(event) =>
+                  updateField("pocDevelopmentStatus", event.target.value)
+                }
+                placeholder="Development progress"
+              />
+            </Field>
+
+            <Field label="POC Internal Demo & Feedback Incorporation">
+              <TextArea
+                rows={3}
+                value={form.pocInternalDemoStatus}
+                onChange={(event) =>
+                  updateField("pocInternalDemoStatus", event.target.value)
+                }
+                placeholder="Internal demo and feedback incorporation status"
+              />
+            </Field>
+
+            <Field label="POC Final Demo">
+              <TextArea
+                rows={3}
+                value={form.pocFinalDemoStatus}
+                onChange={(event) =>
+                  updateField("pocFinalDemoStatus", event.target.value)
+                }
+                placeholder="Final demo readiness/status"
+              />
+            </Field>
+
+            <Field label="POC Next Steps">
+              <TextArea
+                rows={3}
+                value={form.pocNextSteps}
+                onChange={(event) =>
+                  updateField("pocNextSteps", event.target.value)
+                }
+                placeholder="Immediate next steps for POC closure"
+              />
+            </Field>
+          </div>
+        </FormSection>
+
+        <FormSection
+          sectionKey="proposalDocs"
+          title="5. Proposal and Documentation Updates"
+          subtitle="These fields feed the proposal/documentation centralized PPT slide."
+          openSection={openSection}
+          onOpenSection={setOpenSection}
+        >
+          <div className="grid gap-3 xl:grid-cols-2">
+            <Field label="Proposal Status">
+              <TextArea
+                rows={3}
+                value={form.proposalStatus}
+                onChange={(event) =>
+                  updateField("proposalStatus", event.target.value)
+                }
+                placeholder="Proposal prepared, under review, submitted, approved, pending, etc."
+              />
+            </Field>
+
+            <Field label="Documentation Status">
+              <TextArea
+                rows={3}
+                value={form.documentationStatus}
+                onChange={(event) =>
+                  updateField("documentationStatus", event.target.value)
+                }
+                placeholder="BRD, MOM, proposal, technical document, UAT document, etc."
+              />
+            </Field>
+          </div>
+        </FormSection>
+
+        <FormSection
           sectionKey="progress"
-          title="3. Progress and Delivery"
-          subtitle="Progress numbers, achievements, next week plan, and milestones."
+          title="6. Progress and Delivery"
+          subtitle="Progress numbers, next week plan, and milestones."
           openSection={openSection}
           onOpenSection={setOpenSection}
         >
@@ -1448,17 +1869,6 @@ export default function WeeklyCeoReportView({
           </div>
 
           <div className="mt-3 grid gap-3 xl:grid-cols-2">
-            <Field label="Key Achievements This Week">
-              <TextArea
-                rows={4}
-                value={form.achievements}
-                onChange={(event) =>
-                  updateField("achievements", event.target.value)
-                }
-                placeholder="One achievement per line"
-              />
-            </Field>
-
             <Field label="Next Week Plan">
               <TextArea
                 rows={4}
@@ -1472,7 +1882,7 @@ export default function WeeklyCeoReportView({
 
             <Field label="Milestones Completed">
               <TextArea
-                rows={2}
+                rows={4}
                 value={form.milestonesCompleted}
                 onChange={(event) =>
                   updateField("milestonesCompleted", event.target.value)
@@ -1482,7 +1892,7 @@ export default function WeeklyCeoReportView({
 
             <Field label="Milestones Planned Next Week">
               <TextArea
-                rows={2}
+                rows={3}
                 value={form.milestonesNextWeek}
                 onChange={(event) =>
                   updateField("milestonesNextWeek", event.target.value)
@@ -1494,7 +1904,7 @@ export default function WeeklyCeoReportView({
 
         <FormSection
           sectionKey="risks"
-          title="4. Risks, Issues, and Decisions"
+          title="7. Risks, Issues, and Decisions"
           subtitle="Escalations, risks, issues, mitigation, and leadership decisions."
           openSection={openSection}
           onOpenSection={setOpenSection}
@@ -1631,7 +2041,7 @@ export default function WeeklyCeoReportView({
 
         <FormSection
           sectionKey="budget"
-          title="5. Budget, Timeline, and Remarks"
+          title="8. Budget, Timeline, and Remarks"
           subtitle="Optional financial, timeline, and PM remarks."
           openSection={openSection}
           onOpenSection={setOpenSection}
@@ -1719,8 +2129,8 @@ export default function WeeklyCeoReportView({
               >
                 <Save className="h-4 w-4" />
                 {editingReportId
-                  ? "Update Weekly Report"
-                  : "Submit Weekly Report"}
+                  ? "Update Weekly Manager Report"
+                  : "Submit Weekly Manager Report"}
               </button>
             </div>
           </div>
@@ -1733,8 +2143,9 @@ export default function WeeklyCeoReportView({
             <h4 className="text-sm font-semibold text-slate-900">
               Submitted Reports
             </h4>
+
             <p className="text-xs text-slate-500">
-              Edit submitted reports or generate CEO-ready PPT.
+              Edit submitted reports or generate manager-ready PPT.
             </p>
           </div>
 
@@ -1776,19 +2187,24 @@ export default function WeeklyCeoReportView({
                     </div>
 
                     <p className="mt-2 line-clamp-2 max-w-5xl text-sm leading-5 text-slate-600">
-                      {report.executiveSummary || "No executive summary added."}
+                      {report.executiveSummary ||
+                        report.currentStatus ||
+                        "No executive summary added."}
                     </p>
 
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
                       <span className="rounded-xl bg-slate-50 px-2 py-1">
                         Prepared: {report.preparedBy || "-"}
                       </span>
+
                       <span className="rounded-xl bg-slate-50 px-2 py-1">
                         Planned: {safeNumber(report.plannedProgress)}%
                       </span>
+
                       <span className="rounded-xl bg-slate-50 px-2 py-1">
                         Actual: {safeNumber(report.actualProgress)}%
                       </span>
+
                       <span className="rounded-xl bg-slate-50 px-2 py-1">
                         Variance: {safeNumber(report.scheduleVariance)}%
                       </span>
@@ -1808,7 +2224,7 @@ export default function WeeklyCeoReportView({
                     <button
                       type="button"
                       onClick={() =>
-                        generateCeoPpt({ report, project: selectedProject })
+                        generateManagerPpt({ report, project: selectedProject })
                       }
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800"
                     >

@@ -14,6 +14,7 @@ import {
   UserCircle,
 } from "lucide-react";
 
+import CentralizedManagerReportButton from "../components/CentralizedManagerReportButton";
 import ProjectForm from "../components/projects/ProjectForm";
 import CollapsibleCard from "../components/common/AppCollapsibleCard";
 import { usePlannerStore } from "../store/usePlannerStore";
@@ -44,11 +45,19 @@ function PortfolioStatCard({ title, value, icon: Icon, subtitle }) {
 
 function getProjectTaskSummary(project, tasks) {
   const projectTasks = tasks.filter((task) => task.projectId === project.id);
-  const completed = projectTasks.filter((task) => task.status === "Done").length;
-  const inProgress = projectTasks.filter(
-    (task) => task.status === "In Progress"
+
+  const completed = projectTasks.filter((task) =>
+    ["Done", "Completed", "Closed"].includes(task.status)
   ).length;
-  const blocked = projectTasks.filter((task) => task.status === "Blocked").length;
+
+  const inProgress = projectTasks.filter((task) =>
+    ["In Progress", "Ongoing"].includes(task.status)
+  ).length;
+
+  const blocked = projectTasks.filter((task) =>
+    ["Blocked", "On Hold"].includes(task.status)
+  ).length;
+
   const milestones = projectTasks.filter((task) => task.isMilestone).length;
 
   const progress = projectTasks.length
@@ -209,7 +218,11 @@ export default function PortfolioPage() {
 
   const totalProjects = projects.length;
   const totalTasks = tasks.length;
-  const completedTasks = tasks.filter((task) => task.status === "Done").length;
+
+  const completedTasks = tasks.filter((task) =>
+    ["Done", "Completed", "Closed"].includes(task.status)
+  ).length;
+
   const activeProjects = projects.filter(
     (project) => project.status === "Active"
   ).length;
@@ -279,11 +292,14 @@ export default function PortfolioPage() {
 
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
               Manage project workspaces, track progress, and open schedule,
-              sprint, timeline, and reporting views from one place.
+              sprint, timeline, reporting, documentation, and centralized PPT
+              views from one place.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CentralizedManagerReportButton />
+
             <Link
               to="/planner"
               className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"

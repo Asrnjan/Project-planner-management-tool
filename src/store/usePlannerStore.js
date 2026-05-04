@@ -117,6 +117,24 @@ function normalizeWeeklyReport(report = {}) {
     achievements: report.achievements || "",
     nextWeekPlan: report.nextWeekPlan || "",
 
+    currentStatus: report.currentStatus || "",
+    majorMilestoneAchieved: report.majorMilestoneAchieved || "",
+    upcomingMilestone: report.upcomingMilestone || "",
+    potentialRisk: report.potentialRisk || "",
+    outstandingIssuesJustification:
+      report.outstandingIssuesJustification || "",
+    challengesFaced: report.challengesFaced || "",
+    teamMembers: report.teamMembers || "",
+
+    pocScopeAcceptanceStatus: report.pocScopeAcceptanceStatus || "",
+    pocDevelopmentStatus: report.pocDevelopmentStatus || "",
+    pocInternalDemoStatus: report.pocInternalDemoStatus || "",
+    pocFinalDemoStatus: report.pocFinalDemoStatus || "",
+    pocNextSteps: report.pocNextSteps || "",
+
+    proposalStatus: report.proposalStatus || "",
+    documentationStatus: report.documentationStatus || "",
+
     risks: report.risks || "",
     issues: report.issues || "",
     mitigationPlan: report.mitigationPlan || "",
