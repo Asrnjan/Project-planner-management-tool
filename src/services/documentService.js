@@ -1,22 +1,11 @@
 import { supabase } from "../lib/supabaseClient";
-
-export async function getCurrentUser() {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error) {
-    throw error;
-  }
-
-  return user;
-}
+import { getCurrentUser, isCurrentUserAdmin } from "./projectService";
 
 function mapProjectDocumentRow(row) {
   return {
     ...(row.document_data || {}),
     id: row.id,
+    userId: row.user_id,
     projectId: row.project_id,
     title: row.document_data?.title || row.title || "Untitled Document",
     documentType:
@@ -38,7 +27,11 @@ export async function saveProjectDocument(document) {
     id: document.id,
     user_id: user.id,
     project_id: document.projectId,
-    document_data: document,
+    document_data: {
+      ...document,
+      userId: user.id,
+      updatedAt: new Date().toISOString(),
+    },
     title: document.title || "Untitled Document",
     document_type: document.documentType || "Other",
     status: document.status || "Draft",
@@ -58,24 +51,39 @@ export async function saveProjectDocument(document) {
   return mapProjectDocumentRow(data);
 }
 
-export async function loadProjectDocuments() {
+export async function loadProjectDocuments(options = {}) {
   const user = await getCurrentUser();
 
   if (!user) {
     throw new Error("User not logged in.");
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("project_documents")
     .select("*")
-    .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
+
+  if (!options.allUsers) {
+    query = query.eq("user_id", user.id);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
   }
 
   return (data || []).map(mapProjectDocumentRow);
+}
+
+export async function loadAllProjectDocumentsForCentralizedReport() {
+  const admin = await isCurrentUserAdmin();
+
+  if (!admin) {
+    return loadProjectDocuments({ allUsers: false });
+  }
+
+  return loadProjectDocuments({ allUsers: true });
 }
 
 export async function deleteProjectDocumentCloud(documentId) {

@@ -1,22 +1,11 @@
 import { supabase } from "../lib/supabaseClient";
-
-export async function getCurrentUser() {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-
-  if (error) {
-    throw error;
-  }
-
-  return user;
-}
+import { getCurrentUser, isCurrentUserAdmin } from "./projectService";
 
 function mapWeeklyReportRow(row) {
   return {
     ...(row.report_data || {}),
     id: row.id,
+    userId: row.user_id,
     projectId: row.project_id,
     reportingWeek:
       row.report_data?.reportingWeek || row.reporting_week || "",
@@ -39,7 +28,11 @@ export async function saveWeeklyReport(report) {
     id: report.id,
     user_id: user.id,
     project_id: report.projectId,
-    report_data: report,
+    report_data: {
+      ...report,
+      userId: user.id,
+      updatedAt: new Date().toISOString(),
+    },
     reporting_week: report.reportingWeek || "",
     report_date: report.reportDate || "",
     overall_status: report.overallStatus || "Green",
@@ -59,24 +52,39 @@ export async function saveWeeklyReport(report) {
   return mapWeeklyReportRow(data);
 }
 
-export async function loadWeeklyReports() {
+export async function loadWeeklyReports(options = {}) {
   const user = await getCurrentUser();
 
   if (!user) {
     throw new Error("User not logged in.");
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("weekly_reports")
     .select("*")
-    .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
+
+  if (!options.allUsers) {
+    query = query.eq("user_id", user.id);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
   }
 
   return (data || []).map(mapWeeklyReportRow);
+}
+
+export async function loadAllWeeklyReportsForCentralizedReport() {
+  const admin = await isCurrentUserAdmin();
+
+  if (!admin) {
+    return loadWeeklyReports({ allUsers: false });
+  }
+
+  return loadWeeklyReports({ allUsers: true });
 }
 
 export async function deleteWeeklyReportCloud(reportId) {
@@ -97,4 +105,36 @@ export async function deleteWeeklyReportCloud(reportId) {
   }
 
   return true;
+}
+
+export async function saveCentralizedReportRecord(reportData) {
+  const user = await getCurrentUser();
+  const admin = await isCurrentUserAdmin();
+
+  if (!user) {
+    throw new Error("User not logged in.");
+  }
+
+  if (!admin) {
+    throw new Error("Only admin users can save centralized reports.");
+  }
+
+  const payload = {
+    created_by: user.id,
+    title: reportData.title || "Centralized Projects Report",
+    report_date: new Date().toISOString().slice(0, 10),
+    report_data: reportData,
+  };
+
+  const { data, error } = await supabase
+    .from("centralized_reports")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
 }

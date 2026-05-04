@@ -3,8 +3,16 @@ import {
   loadPlannerData,
   savePlannerData,
   clearPlannerData,
+  setActivePlannerUser,
+  clearLegacySharedPlannerData,
 } from "../utils/storage";
-import { seedProjects, seedSprints, seedTasks } from "../data/seedData";
+
+import {
+  loadProjects,
+  saveProject,
+  deleteProject as deleteProjectCloud,
+  getCurrentUser,
+} from "../services/projectService";
 
 import {
   loadWeeklyReports,
@@ -30,11 +38,26 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function emptyPlannerData() {
+  return {
+    projects: [],
+    sprints: [],
+    tasks: [],
+    plannerSettings: {
+      schedulingMode: "manual",
+    },
+    baselineSnapshots: [],
+    weeklyReports: [],
+    projectDocuments: [],
+  };
+}
+
 function normalizeProject(project = {}) {
   const timestamp = nowIso();
 
   return {
     id: project.id || makeId("project"),
+    userId: project.userId || project.user_id || "",
     name: project.name?.trim() || "Untitled Project",
     owner: project.owner || "",
     description: project.description || "",
@@ -51,6 +74,7 @@ function normalizeSprint(sprint = {}) {
 
   return {
     id: sprint.id || makeId("sprint"),
+    userId: sprint.userId || sprint.user_id || "",
     projectId: sprint.projectId || "",
     name: sprint.name?.trim() || "Untitled Sprint",
     startDate: sprint.startDate || "",
@@ -66,6 +90,7 @@ function normalizeTask(task = {}) {
 
   return {
     id: task.id || makeId("task"),
+    userId: task.userId || task.user_id || "",
     projectId: task.projectId || "",
     sprintId: task.sprintId || "",
     parentTaskId: task.parentTaskId || "",
@@ -93,6 +118,7 @@ function normalizeWeeklyReport(report = {}) {
 
   return {
     id: report.id || makeId("weekly-report"),
+    userId: report.userId || report.user_id || "",
     projectId: report.projectId || "",
     reportingWeek: report.reportingWeek || "",
     reportDate: report.reportDate || timestamp.slice(0, 10),
@@ -169,6 +195,7 @@ function normalizeProjectDocument(document = {}) {
 
   return {
     id: document.id || makeId("project-doc"),
+    userId: document.userId || document.user_id || "",
     projectId: document.projectId || "",
     title: document.title?.trim() || "Untitled Document",
     documentType: document.documentType || "Other",
@@ -184,22 +211,104 @@ function normalizeProjectDocument(document = {}) {
   };
 }
 
-const stored = loadPlannerData();
+function normalizePlannerData(data = {}) {
+  return {
+    projects: Array.isArray(data.projects)
+      ? data.projects.map(normalizeProject)
+      : [],
 
-const initialData = stored || {
-  projects: seedProjects,
-  sprints: seedSprints,
-  tasks: seedTasks,
-  plannerSettings: {
-    schedulingMode: "manual",
-  },
-  baselineSnapshots: [],
-  weeklyReports: [],
-  projectDocuments: [],
-};
+    sprints: Array.isArray(data.sprints)
+      ? data.sprints.map(normalizeSprint)
+      : [],
 
-function persist(state) {
-  savePlannerData({
+    tasks: Array.isArray(data.tasks) ? data.tasks.map(normalizeTask) : [],
+
+    plannerSettings:
+      data.plannerSettings && typeof data.plannerSettings === "object"
+        ? data.plannerSettings
+        : { schedulingMode: "manual" },
+
+    baselineSnapshots: Array.isArray(data.baselineSnapshots)
+      ? data.baselineSnapshots
+      : [],
+
+    weeklyReports: Array.isArray(data.weeklyReports)
+      ? data.weeklyReports.map(normalizeWeeklyReport)
+      : [],
+
+    projectDocuments: Array.isArray(data.projectDocuments)
+      ? data.projectDocuments.map(normalizeProjectDocument)
+      : [],
+  };
+}
+
+function buildWorkspaceFromCloudProjects(cloudProjects = []) {
+  const projects = [];
+  const sprints = [];
+  const tasks = [];
+  const baselineSnapshots = [];
+  let plannerSettings = { schedulingMode: "manual" };
+
+  cloudProjects.forEach((project) => {
+    const projectData =
+      project.project_data && typeof project.project_data === "object"
+        ? project.project_data
+        : project;
+
+    const normalizedProject = normalizeProject({
+      ...projectData,
+      ...project,
+      id: projectData.id || project.id,
+      userId: project.userId || project.user_id || projectData.userId || "",
+    });
+
+    projects.push(normalizedProject);
+
+    if (Array.isArray(projectData.sprints)) {
+      projectData.sprints.forEach((sprint) => {
+        sprints.push(
+          normalizeSprint({
+            ...sprint,
+            userId: project.userId || project.user_id || sprint.userId || "",
+          })
+        );
+      });
+    }
+
+    if (Array.isArray(projectData.tasks)) {
+      projectData.tasks.forEach((task) => {
+        tasks.push(
+          normalizeTask({
+            ...task,
+            userId: project.userId || project.user_id || task.userId || "",
+          })
+        );
+      });
+    }
+
+    if (Array.isArray(projectData.baselineSnapshots)) {
+      baselineSnapshots.push(...projectData.baselineSnapshots);
+    }
+
+    if (
+      projectData.plannerSettings &&
+      typeof projectData.plannerSettings === "object"
+    ) {
+      plannerSettings = projectData.plannerSettings;
+    }
+  });
+
+  return {
+    projects,
+    sprints,
+    tasks,
+    plannerSettings,
+    baselineSnapshots,
+  };
+}
+
+function makeWorkspacePayload(state) {
+  return {
     projects: state.projects,
     sprints: state.sprints,
     tasks: state.tasks,
@@ -207,45 +316,191 @@ function persist(state) {
     baselineSnapshots: state.baselineSnapshots,
     weeklyReports: state.weeklyReports,
     projectDocuments: state.projectDocuments,
-  });
+  };
 }
 
+function persist(state) {
+  savePlannerData(makeWorkspacePayload(state), state.currentUserId || "");
+}
+
+async function persistCurrentWorkspaceToCloud(state) {
+  const currentUserId = state.currentUserId || "";
+
+  if (!currentUserId) return;
+
+  const workspacePayload = makeWorkspacePayload(state);
+
+  const saveJobs = state.projects.map((project) => {
+    const projectScopedPayload = {
+      ...project,
+      userId: currentUserId,
+      projects: [project],
+      sprints: state.sprints.filter((sprint) => sprint.projectId === project.id),
+      tasks: state.tasks.filter((task) => task.projectId === project.id),
+      baselineSnapshots: state.baselineSnapshots.filter(
+        (snapshot) => !snapshot.projectId || snapshot.projectId === project.id
+      ),
+      weeklyReports: state.weeklyReports.filter(
+        (report) => report.projectId === project.id
+      ),
+      projectDocuments: state.projectDocuments.filter(
+        (document) => document.projectId === project.id
+      ),
+      plannerSettings: state.plannerSettings,
+      savedAt: nowIso(),
+      saveType: "single_project_workspace",
+      fullWorkspaceSnapshot: workspacePayload,
+    };
+
+    return saveProject(projectScopedPayload).catch((error) => {
+      console.error("Failed to save project workspace to Supabase:", error);
+      return null;
+    });
+  });
+
+  await Promise.all(saveJobs);
+}
+
+const initialData = normalizePlannerData(loadPlannerData() || emptyPlannerData());
+
 export const usePlannerStore = create((set, get) => ({
-  projects: Array.isArray(initialData.projects)
-    ? initialData.projects.map(normalizeProject)
-    : [],
+  currentUserId: "",
+  isWorkspaceLoading: false,
+  workspaceLoadError: "",
 
-  sprints: Array.isArray(initialData.sprints)
-    ? initialData.sprints.map(normalizeSprint)
-    : [],
+  projects: initialData.projects,
+  sprints: initialData.sprints,
+  tasks: initialData.tasks,
+  plannerSettings: initialData.plannerSettings,
+  baselineSnapshots: initialData.baselineSnapshots,
+  weeklyReports: initialData.weeklyReports,
+  projectDocuments: initialData.projectDocuments,
 
-  tasks: Array.isArray(initialData.tasks)
-    ? initialData.tasks.map(normalizeTask)
-    : [],
+  initializeWorkspaceForCurrentUser: async () => {
+    set({
+      isWorkspaceLoading: true,
+      workspaceLoadError: "",
+    });
 
-  plannerSettings: initialData.plannerSettings || { schedulingMode: "manual" },
+    try {
+      const user = await getCurrentUser();
 
-  baselineSnapshots: Array.isArray(initialData.baselineSnapshots)
-    ? initialData.baselineSnapshots
-    : [],
+      if (!user) {
+        setActivePlannerUser("");
+        clearLegacySharedPlannerData();
 
-  weeklyReports: Array.isArray(initialData.weeklyReports)
-    ? initialData.weeklyReports.map(normalizeWeeklyReport)
-    : [],
+        const empty = emptyPlannerData();
 
-  projectDocuments: Array.isArray(initialData.projectDocuments)
-    ? initialData.projectDocuments.map(normalizeProjectDocument)
-    : [],
+        set({
+          currentUserId: "",
+          isWorkspaceLoading: false,
+          ...empty,
+        });
+
+        return empty;
+      }
+
+      setActivePlannerUser(user.id);
+      clearLegacySharedPlannerData();
+
+      const localData = normalizePlannerData(loadPlannerData(user.id));
+
+      const [cloudProjects, cloudReports, cloudDocuments] = await Promise.all([
+        loadProjects({ allUsers: false }),
+        loadWeeklyReports({ allUsers: false }),
+        loadProjectDocuments({ allUsers: false }),
+      ]);
+
+      const cloudWorkspace = buildWorkspaceFromCloudProjects(cloudProjects);
+
+      const hasCloudProjects = cloudWorkspace.projects.length > 0;
+
+      const next = {
+        currentUserId: user.id,
+        isWorkspaceLoading: false,
+        workspaceLoadError: "",
+
+        projects: hasCloudProjects ? cloudWorkspace.projects : localData.projects,
+        sprints: hasCloudProjects ? cloudWorkspace.sprints : localData.sprints,
+        tasks: hasCloudProjects ? cloudWorkspace.tasks : localData.tasks,
+
+        plannerSettings: hasCloudProjects
+          ? cloudWorkspace.plannerSettings
+          : localData.plannerSettings,
+
+        baselineSnapshots: hasCloudProjects
+          ? cloudWorkspace.baselineSnapshots
+          : localData.baselineSnapshots,
+
+        weeklyReports: Array.isArray(cloudReports)
+          ? cloudReports.map(normalizeWeeklyReport)
+          : localData.weeklyReports,
+
+        projectDocuments: Array.isArray(cloudDocuments)
+          ? cloudDocuments.map(normalizeProjectDocument)
+          : localData.projectDocuments,
+      };
+
+      set(next);
+      savePlannerData(makeWorkspacePayload(next), user.id);
+
+      return next;
+    } catch (error) {
+      console.error("Failed to initialize user workspace:", error);
+
+      const message =
+        error?.message ||
+        "Failed to load your workspace. Please refresh and try again.";
+
+      set({
+        isWorkspaceLoading: false,
+        workspaceLoadError: message,
+      });
+
+      throw error;
+    }
+  },
+
+  clearWorkspaceForLogout: () => {
+    const userId = get().currentUserId;
+
+    if (userId) {
+      clearPlannerData(userId);
+    }
+
+    setActivePlannerUser("");
+
+    const empty = emptyPlannerData();
+
+    set({
+      currentUserId: "",
+      isWorkspaceLoading: false,
+      workspaceLoadError: "",
+      ...empty,
+    });
+  },
 
   loadCloudReportsAndDocuments: async () => {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      return {
+        weeklyReports: [],
+        projectDocuments: [],
+      };
+    }
+
+    setActivePlannerUser(user.id);
+
     const [cloudReports, cloudDocuments] = await Promise.all([
-      loadWeeklyReports(),
-      loadProjectDocuments(),
+      loadWeeklyReports({ allUsers: false }),
+      loadProjectDocuments({ allUsers: false }),
     ]);
 
     set((state) => {
       const next = {
         ...state,
+        currentUserId: user.id,
         weeklyReports: Array.isArray(cloudReports)
           ? cloudReports.map(normalizeWeeklyReport)
           : [],
@@ -264,6 +519,10 @@ export const usePlannerStore = create((set, get) => ({
     };
   },
 
+  refreshCloudWorkspace: async () => {
+    return get().initializeWorkspaceForCurrentUser();
+  },
+
   setSchedulingMode: (mode) => {
     set((state) => {
       const next = {
@@ -275,6 +534,8 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
@@ -309,63 +570,89 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
 
   importPlannerData: (payload = {}) => {
     set((state) => {
+      const normalizedPayload = normalizePlannerData(payload);
+
       const next = {
         ...state,
-
-        projects: Array.isArray(payload.projects)
-          ? payload.projects.map(normalizeProject)
-          : [],
-
-        sprints: Array.isArray(payload.sprints)
-          ? payload.sprints.map(normalizeSprint)
-          : [],
-
-        tasks: Array.isArray(payload.tasks)
-          ? payload.tasks.map(normalizeTask)
-          : [],
-
-        plannerSettings:
-          payload.plannerSettings && typeof payload.plannerSettings === "object"
-            ? payload.plannerSettings
-            : { schedulingMode: "manual" },
-
-        baselineSnapshots: Array.isArray(payload.baselineSnapshots)
-          ? payload.baselineSnapshots
-          : [],
-
-        weeklyReports: Array.isArray(payload.weeklyReports)
-          ? payload.weeklyReports.map(normalizeWeeklyReport)
-          : state.weeklyReports || [],
-
-        projectDocuments: Array.isArray(payload.projectDocuments)
-          ? payload.projectDocuments.map(normalizeProjectDocument)
-          : state.projectDocuments || [],
+        ...normalizedPayload,
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
 
-  addProject: (project) => {
-    set((state) => {
-      const newProject = normalizeProject(project);
-
-      const next = {
-        ...state,
-        projects: [...state.projects, newProject],
-      };
-
-      persist(next);
-      return next;
+addProject: (project) => {
+  set((state) => {
+    const newProject = normalizeProject({
+      ...project,
+      userId: state.currentUserId,
     });
-  },
+
+    const next = {
+      ...state,
+      projects: [...state.projects, newProject],
+    };
+
+    persist(next);
+
+    saveProject({
+      ...newProject,
+      userId: state.currentUserId,
+      projects: [newProject],
+      sprints: [],
+      tasks: [],
+      baselineSnapshots: [],
+      weeklyReports: [],
+      projectDocuments: [],
+      plannerSettings: state.plannerSettings,
+      savedAt: nowIso(),
+      saveType: "single_project_workspace",
+    })
+      .then((savedProject) => {
+        if (!savedProject?.cloudId) return;
+
+        set((latestState) => {
+          const updatedState = {
+            ...latestState,
+            projects: latestState.projects.map((existingProject) =>
+              existingProject.id === newProject.id
+                ? {
+                    ...existingProject,
+                    cloudId: savedProject.cloudId,
+                    dbId: savedProject.dbId,
+                    userId: savedProject.userId || latestState.currentUserId,
+                    updatedAt: savedProject.updatedAt || existingProject.updatedAt,
+                  }
+                : existingProject
+            ),
+          };
+
+          persist(updatedState);
+          return updatedState;
+        });
+      })
+      .catch((error) => {
+        console.error("Failed to save project to Supabase:", error);
+        alert(
+          error?.message ||
+            "Project was added locally, but failed to save in Supabase."
+        );
+      });
+
+    return next;
+  });
+},
 
   updateProject: (projectId, updates) => {
     set((state) => {
@@ -376,6 +663,7 @@ export const usePlannerStore = create((set, get) => ({
             ? {
                 ...project,
                 ...updates,
+                userId: project.userId || state.currentUserId,
                 updatedAt: nowIso(),
               }
             : project
@@ -383,6 +671,8 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
@@ -413,6 +703,11 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+
+      deleteProjectCloud(projectId).catch((error) => {
+        console.error("Failed to delete project from Supabase:", error);
+      });
+
       return next;
     });
   },
@@ -431,6 +726,7 @@ export const usePlannerStore = create((set, get) => ({
       const duplicatedProject = {
         ...originalProject,
         id: newProjectId,
+        userId: state.currentUserId,
         name: `${originalProject.name} Copy`,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -446,6 +742,7 @@ export const usePlannerStore = create((set, get) => ({
           return {
             ...sprint,
             id: newSprintId,
+            userId: state.currentUserId,
             projectId: newProjectId,
             createdAt: timestamp,
             updatedAt: timestamp,
@@ -464,6 +761,7 @@ export const usePlannerStore = create((set, get) => ({
       const duplicatedTasks = sourceTasks.map((task) => ({
         ...task,
         id: taskIdMap[task.id],
+        userId: state.currentUserId,
         projectId: newProjectId,
         sprintId: sprintIdMap[task.sprintId] || "",
         parentTaskId: taskIdMap[task.parentTaskId] || "",
@@ -480,6 +778,7 @@ export const usePlannerStore = create((set, get) => ({
           normalizeWeeklyReport({
             ...report,
             id: makeId("weekly-report"),
+            userId: state.currentUserId,
             projectId: newProjectId,
             reportingWeek: report.reportingWeek || "",
             submittedAt: timestamp,
@@ -494,6 +793,7 @@ export const usePlannerStore = create((set, get) => ({
           normalizeProjectDocument({
             ...document,
             id: makeId("project-doc"),
+            userId: state.currentUserId,
             projectId: newProjectId,
             title: `${document.title} Copy`,
             createdAt: timestamp,
@@ -511,6 +811,21 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+
+      saveProject({
+        ...duplicatedProject,
+        projects: [duplicatedProject],
+        sprints: duplicatedSprints,
+        tasks: duplicatedTasks,
+        weeklyReports: duplicatedReports,
+        projectDocuments: duplicatedDocuments,
+        baselineSnapshots: [],
+        plannerSettings: state.plannerSettings,
+        savedAt: nowIso(),
+        saveType: "single_project_workspace",
+      }).catch((error) => {
+        console.error("Failed to save duplicated project to Supabase:", error);
+      });
 
       duplicatedReports.forEach((report) => {
         saveWeeklyReport(report).catch((error) => {
@@ -530,7 +845,10 @@ export const usePlannerStore = create((set, get) => ({
 
   addSprint: (sprint) => {
     set((state) => {
-      const newSprint = normalizeSprint(sprint);
+      const newSprint = normalizeSprint({
+        ...sprint,
+        userId: state.currentUserId,
+      });
 
       const next = {
         ...state,
@@ -538,6 +856,8 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
@@ -551,6 +871,7 @@ export const usePlannerStore = create((set, get) => ({
             ? {
                 ...sprint,
                 ...updates,
+                userId: sprint.userId || state.currentUserId,
                 updatedAt: nowIso(),
               }
             : sprint
@@ -558,6 +879,8 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
@@ -576,13 +899,18 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
 
   addTask: (task) => {
     set((state) => {
-      const newTask = normalizeTask(task);
+      const newTask = normalizeTask({
+        ...task,
+        userId: state.currentUserId,
+      });
 
       const next = {
         ...state,
@@ -590,6 +918,8 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
@@ -603,6 +933,8 @@ export const usePlannerStore = create((set, get) => ({
             ? {
                 ...task,
                 ...updates,
+
+                userId: task.userId || state.currentUserId,
 
                 dependencyIds: Array.isArray(updates.dependencyIds)
                   ? updates.dependencyIds
@@ -627,6 +959,8 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
@@ -640,6 +974,7 @@ export const usePlannerStore = create((set, get) => ({
           ? nextTasks.map((task) =>
               normalizeTask({
                 ...task,
+                userId: task.userId || state.currentUserId,
                 updatedAt: task.updatedAt || nowIso(),
               })
             )
@@ -647,6 +982,8 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
@@ -670,6 +1007,8 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       persist(next);
+      persistCurrentWorkspaceToCloud(next);
+
       return next;
     });
   },
@@ -680,6 +1019,7 @@ export const usePlannerStore = create((set, get) => ({
 
       const newReport = normalizeWeeklyReport({
         ...report,
+        userId: state.currentUserId,
         id: makeId("weekly-report"),
         submittedAt: timestamp,
         createdAt: timestamp,
@@ -715,6 +1055,7 @@ export const usePlannerStore = create((set, get) => ({
             ...report,
             ...updates,
             id: report.id,
+            userId: report.userId || state.currentUserId,
             createdAt: report.createdAt,
             submittedAt: report.submittedAt,
             updatedAt: nowIso(),
@@ -761,6 +1102,7 @@ export const usePlannerStore = create((set, get) => ({
 
       const newDocument = normalizeProjectDocument({
         ...document,
+        userId: state.currentUserId,
         id: makeId("project-doc"),
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -795,6 +1137,7 @@ export const usePlannerStore = create((set, get) => ({
             ...document,
             ...updates,
             id: document.id,
+            userId: document.userId || state.currentUserId,
             createdAt: document.createdAt,
             updatedAt: nowIso(),
           });
@@ -835,18 +1178,17 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   resetAllData: () => {
-    clearPlannerData();
+    const userId = get().currentUserId;
+
+    clearPlannerData(userId);
+
+    const empty = emptyPlannerData();
 
     set({
-      projects: seedProjects.map(normalizeProject),
-      sprints: seedSprints.map(normalizeSprint),
-      tasks: seedTasks.map(normalizeTask),
-      plannerSettings: {
-        schedulingMode: "manual",
-      },
-      baselineSnapshots: [],
-      weeklyReports: [],
-      projectDocuments: [],
+      currentUserId: userId,
+      isWorkspaceLoading: false,
+      workspaceLoadError: "",
+      ...empty,
     });
   },
 }));
