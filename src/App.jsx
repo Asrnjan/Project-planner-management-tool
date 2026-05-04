@@ -133,18 +133,7 @@ export default function App() {
     return (
       <div style={styles.loadingPage}>
         <div style={styles.loadingCard}>
-          <div>{authLoading ? "Loading..." : "Loading your workspace..."}</div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setAuthLoading(false);
-              setWorkspaceLoading(false);
-            }}
-            style={styles.smallButton}
-          >
-            Continue
-          </button>
+          {authLoading ? "Loading..." : "Loading your workspace..."}
         </div>
       </div>
     );
@@ -162,6 +151,7 @@ export default function App() {
             type="button"
             onClick={() => {
               const userId = session?.user?.id || "";
+
               if (userId) {
                 loadWorkspaceForUser(userId);
               } else {
@@ -222,17 +212,6 @@ const styles = {
     fontSize: "16px",
     fontWeight: "600",
     textAlign: "center",
-  },
-  smallButton: {
-    marginTop: "14px",
-    padding: "8px 14px",
-    border: "1px solid #d1d5db",
-    borderRadius: "8px",
-    background: "#ffffff",
-    color: "#374151",
-    fontSize: "12px",
-    fontWeight: "600",
-    cursor: "pointer",
   },
   errorCard: {
     width: "420px",
