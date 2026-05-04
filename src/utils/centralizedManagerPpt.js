@@ -1,5 +1,30 @@
 import pptxgen from "pptxgenjs";
 
+const COLORS = {
+  navy: "0F172A",
+  blue: "2563EB",
+  blueLight: "DBEAFE",
+  green: "16A34A",
+  greenLight: "DCFCE7",
+  amber: "D97706",
+  amberLight: "FEF3C7",
+  red: "DC2626",
+  redLight: "FEE2E2",
+  slate: "475569",
+  slate2: "64748B",
+  border: "CBD5E1",
+  softBorder: "E2E8F0",
+  bg: "F8FAFC",
+  white: "FFFFFF",
+  card: "FFFFFF",
+  muted: "F1F5F9",
+
+  onTrackBg: "F0FDF4",
+  atRiskBg: "FFFBEB",
+  delayedBg: "FEF2F2",
+  unknownBg: "EFF6FF",
+};
+
 function safeText(value, fallback = "-") {
   if (value === null || value === undefined || value === "") return fallback;
   return String(value);
@@ -11,6 +36,13 @@ function cleanText(value, fallback = "Not updated.") {
   }
 
   return String(value).trim();
+}
+
+function truncateText(value, maxLength = 220) {
+  const text = cleanText(value, "");
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 3)}...`;
 }
 
 function formatDate(value) {
@@ -35,6 +67,10 @@ function getShapes(pptx) {
     rect: pptx.ShapeType?.rect || "rect",
     roundRect: pptx.ShapeType?.roundRect || "roundRect",
   };
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value || 0))));
 }
 
 function getProjectTasks(projectId, tasks = []) {
@@ -83,8 +119,16 @@ function getTaskStats(projectTasks = []) {
     0
   );
 
-  const averageProgress =
+  const totalPlannedProgress = projectTasks.reduce(
+    (sum, task) => sum + Number(task.plannedProgress || 0),
+    0
+  );
+
+  const averageActualProgress =
     totalTasks > 0 ? Math.round(totalActualProgress / totalTasks) : 0;
+
+  const averagePlannedProgress =
+    totalTasks > 0 ? Math.round(totalPlannedProgress / totalTasks) : 0;
 
   return {
     totalTasks,
@@ -92,101 +136,152 @@ function getTaskStats(projectTasks = []) {
     inProgressTasks,
     blockedTasks,
     milestones,
-    averageProgress,
+    averageProgress: averageActualProgress,
+    averageActualProgress,
+    averagePlannedProgress,
   };
 }
 
-function addFooter(slide, text) {
-  slide.addText(text, {
-    x: 0.5,
-    y: 7.05,
-    w: 12.25,
-    h: 0.25,
-    fontSize: 7.5,
-    color: "666666",
-    align: "right",
-  });
+function getProgressMetrics(projectTasks, latestReport) {
+  const stats = getTaskStats(projectTasks);
+
+  const plannedProgress =
+    latestReport?.plannedProgress !== undefined &&
+    latestReport?.plannedProgress !== null &&
+    latestReport?.plannedProgress !== ""
+      ? clampPercent(latestReport.plannedProgress)
+      : clampPercent(stats.averagePlannedProgress);
+
+  const actualProgress =
+    latestReport?.actualProgress !== undefined &&
+    latestReport?.actualProgress !== null &&
+    latestReport?.actualProgress !== ""
+      ? clampPercent(latestReport.actualProgress)
+      : clampPercent(stats.averageActualProgress);
+
+  const gap = actualProgress - plannedProgress;
+
+  return {
+    plannedProgress,
+    actualProgress,
+    gap,
+    gapLabel: gap >= 0 ? `+${gap}%` : `${gap}%`,
+  };
 }
 
-function addTopBar(slide, shapes) {
-  slide.addShape(shapes.rect, {
-    x: 0,
-    y: 0,
-    w: 13.333,
-    h: 0.16,
-    fill: { color: "111827" },
-    line: { color: "111827" },
-  });
+function getHealthStyle({ latestReport, project, stats, progressMetrics }) {
+  const rawStatus = String(
+    latestReport?.overallStatus || project.status || ""
+  ).toLowerCase();
+
+  const gap = Number(progressMetrics.gap || 0);
+
+  if (
+    rawStatus.includes("red") ||
+    rawStatus.includes("delayed") ||
+    rawStatus.includes("blocked") ||
+    gap <= -15
+  ) {
+    return {
+      label: "Delayed",
+      fill: COLORS.redLight,
+      color: COLORS.red,
+      accent: COLORS.red,
+      background: COLORS.delayedBg,
+      message:
+        "Project needs attention due to delay, blockers, or progress gap.",
+    };
+  }
+
+  if (
+    rawStatus.includes("amber") ||
+    rawStatus.includes("yellow") ||
+    rawStatus.includes("risk") ||
+    rawStatus.includes("at risk") ||
+    stats.blockedTasks > 0 ||
+    gap < 0
+  ) {
+    return {
+      label: "At Risk",
+      fill: COLORS.amberLight,
+      color: COLORS.amber,
+      accent: COLORS.amber,
+      background: COLORS.atRiskBg,
+      message:
+        "Project has visible risk indicators and should be monitored closely.",
+    };
+  }
+
+  if (
+    rawStatus.includes("green") ||
+    rawStatus.includes("active") ||
+    rawStatus.includes("on track") ||
+    gap >= 0
+  ) {
+    return {
+      label: "On Track",
+      fill: COLORS.greenLight,
+      color: COLORS.green,
+      accent: COLORS.green,
+      background: COLORS.onTrackBg,
+      message: "Project is moving as planned or ahead of planned progress.",
+    };
+  }
+
+  return {
+    label: "Not Updated",
+    fill: COLORS.blueLight,
+    color: COLORS.blue,
+    accent: COLORS.blue,
+    background: COLORS.unknownBg,
+    message: "Project health has not been clearly updated.",
+  };
 }
 
-function addMetricBox(slide, shapes, label, value, x, y, w, h) {
-  slide.addShape(shapes.roundRect, {
-    x,
-    y,
-    w,
-    h,
-    rectRadius: 0.06,
-    fill: { color: "F8FAFC" },
-    line: { color: "CBD5E1", width: 1 },
-  });
+function getStatusStyle(status = "") {
+  const normalized = String(status).toLowerCase();
 
-  slide.addText(String(value), {
-    x,
-    y: y + 0.09,
-    w,
-    h: 0.28,
-    fontSize: 15,
-    bold: true,
-    color: "111827",
-    align: "center",
-    fit: "shrink",
-  });
+  if (
+    normalized.includes("red") ||
+    normalized.includes("blocked") ||
+    normalized.includes("delayed")
+  ) {
+    return {
+      fill: COLORS.redLight,
+      color: COLORS.red,
+      label: status || "Red",
+    };
+  }
 
-  slide.addText(label, {
-    x: x + 0.05,
-    y: y + 0.43,
-    w: w - 0.1,
-    h: 0.22,
-    fontSize: 7.2,
-    color: "4B5563",
-    align: "center",
-    fit: "shrink",
-  });
-}
+  if (
+    normalized.includes("amber") ||
+    normalized.includes("yellow") ||
+    normalized.includes("risk")
+  ) {
+    return {
+      fill: COLORS.amberLight,
+      color: COLORS.amber,
+      label: status || "Amber",
+    };
+  }
 
-function addSectionBox(slide, shapes, title, body, x, y, w, h) {
-  slide.addShape(shapes.roundRect, {
-    x,
-    y,
-    w,
-    h,
-    rectRadius: 0.05,
-    fill: { color: "F9FAFB" },
-    line: { color: "E5E7EB", width: 1 },
-  });
+  if (
+    normalized.includes("green") ||
+    normalized.includes("active") ||
+    normalized.includes("on track")
+  ) {
+    return {
+      fill: COLORS.greenLight,
+      color: COLORS.green,
+      label: status || "Green",
+    };
+  }
 
-  slide.addText(title, {
-    x: x + 0.14,
-    y: y + 0.12,
-    w: w - 0.28,
-    h: 0.22,
-    fontSize: 9.2,
-    bold: true,
-    color: "111827",
-    fit: "shrink",
-  });
-
-  slide.addText(cleanText(body), {
-    x: x + 0.14,
-    y: y + 0.43,
-    w: w - 0.28,
-    h: h - 0.52,
-    fontSize: 7.8,
-    color: "374151",
-    valign: "top",
-    fit: "shrink",
-    breakLine: false,
-  });
+  return {
+    fill: COLORS.blueLight,
+    color: COLORS.blue,
+    label: status || "Not Updated",
+  };
 }
 
 function makeProjectStatusText(project, latestReport) {
@@ -282,11 +377,494 @@ function makeTeamText(project, latestReport, projectTasks) {
   return project.owner || "Team members have not been updated.";
 }
 
-function addCoverSlide(pptx, shapes, projects, tasks) {
-  const slide = pptx.addSlide();
-  slide.background = { color: "FFFFFF" };
+function getProjectHealthDetails(project, tasks, sprints, weeklyReports) {
+  const projectTasks = getProjectTasks(project.id, tasks);
+  const projectSprints = getProjectSprints(project.id, sprints);
+  const latestReport = getLatestProjectReport(project.id, weeklyReports);
+  const stats = getTaskStats(projectTasks);
+  const progressMetrics = getProgressMetrics(projectTasks, latestReport);
+  const health = getHealthStyle({
+    latestReport,
+    project,
+    stats,
+    progressMetrics,
+  });
 
-  addTopBar(slide, shapes);
+  return {
+    project,
+    projectTasks,
+    projectSprints,
+    latestReport,
+    stats,
+    progressMetrics,
+    health,
+  };
+}
+
+function getPortfolioHealthData(projects, tasks, sprints, weeklyReports) {
+  const activeProjects = projects.filter(
+    (project) => project.status !== "Archived"
+  );
+
+  const projectDetails = activeProjects.map((project) =>
+    getProjectHealthDetails(project, tasks, sprints, weeklyReports)
+  );
+
+  const onTrack = projectDetails.filter(
+    (item) => item.health.label === "On Track"
+  ).length;
+
+  const atRisk = projectDetails.filter(
+    (item) => item.health.label === "At Risk"
+  ).length;
+
+  const delayed = projectDetails.filter(
+    (item) => item.health.label === "Delayed"
+  ).length;
+
+  const notUpdated = projectDetails.filter(
+    (item) => item.health.label === "Not Updated"
+  ).length;
+
+  const plannedTotal = projectDetails.reduce(
+    (sum, item) => sum + item.progressMetrics.plannedProgress,
+    0
+  );
+
+  const actualTotal = projectDetails.reduce(
+    (sum, item) => sum + item.progressMetrics.actualProgress,
+    0
+  );
+
+  const plannedAverage =
+    projectDetails.length > 0
+      ? Math.round(plannedTotal / projectDetails.length)
+      : 0;
+
+  const actualAverage =
+    projectDetails.length > 0
+      ? Math.round(actualTotal / projectDetails.length)
+      : 0;
+
+  return {
+    activeProjects,
+    projectDetails,
+    onTrack,
+    atRisk,
+    delayed,
+    notUpdated,
+    plannedAverage,
+    actualAverage,
+    gap: actualAverage - plannedAverage,
+    gapLabel:
+      actualAverage - plannedAverage >= 0
+        ? `+${actualAverage - plannedAverage}%`
+        : `${actualAverage - plannedAverage}%`,
+  };
+}
+
+function addFooter(slide, text) {
+  slide.addText(text, {
+    x: 0.5,
+    y: 7.05,
+    w: 12.25,
+    h: 0.25,
+    fontSize: 7.2,
+    color: COLORS.slate2,
+    align: "right",
+    fit: "shrink",
+  });
+}
+
+function addSlideHeader(
+  slide,
+  shapes,
+  title,
+  subtitle = "",
+  section = "",
+  background = COLORS.bg
+) {
+  slide.background = { color: background };
+
+  slide.addShape(shapes.rect, {
+    x: 0,
+    y: 0,
+    w: 13.333,
+    h: 0.18,
+    fill: { color: COLORS.navy },
+    line: { color: COLORS.navy },
+  });
+
+  slide.addText(section || "CENTRALIZED REPORT", {
+    x: 0.55,
+    y: 0.36,
+    w: 3.5,
+    h: 0.22,
+    fontSize: 7.4,
+    bold: true,
+    color: COLORS.blue,
+    charSpace: 1.2,
+    fit: "shrink",
+  });
+
+  slide.addText(title, {
+    x: 0.55,
+    y: 0.62,
+    w: 8.8,
+    h: 0.42,
+    fontSize: 22,
+    bold: true,
+    color: COLORS.navy,
+    fit: "shrink",
+  });
+
+  if (subtitle) {
+    slide.addText(subtitle, {
+      x: 0.57,
+      y: 1.08,
+      w: 10.8,
+      h: 0.25,
+      fontSize: 9.2,
+      color: COLORS.slate,
+      fit: "shrink",
+    });
+  }
+
+  slide.addText(formatDate(new Date()), {
+    x: 10.55,
+    y: 0.55,
+    w: 2.15,
+    h: 0.24,
+    fontSize: 8.5,
+    color: COLORS.slate,
+    align: "right",
+    fit: "shrink",
+  });
+}
+
+function addMetricCard(
+  slide,
+  shapes,
+  label,
+  value,
+  x,
+  y,
+  w,
+  h,
+  color = COLORS.blue
+) {
+  slide.addShape(shapes.roundRect, {
+    x,
+    y,
+    w,
+    h,
+    rectRadius: 0.08,
+    fill: { color: COLORS.card },
+    line: { color: COLORS.softBorder, width: 1 },
+  });
+
+  slide.addShape(shapes.rect, {
+    x: x + 0.14,
+    y: y + 0.14,
+    w: 0.12,
+    h: h - 0.28,
+    fill: { color },
+    line: { color },
+  });
+
+  slide.addText(String(value), {
+    x: x + 0.35,
+    y: y + 0.14,
+    w: w - 0.48,
+    h: 0.3,
+    fontSize: 15,
+    bold: true,
+    color: COLORS.navy,
+    fit: "shrink",
+  });
+
+  slide.addText(label, {
+    x: x + 0.35,
+    y: y + 0.5,
+    w: w - 0.48,
+    h: 0.18,
+    fontSize: 6.8,
+    color: COLORS.slate,
+    fit: "shrink",
+  });
+}
+
+function addStatusChip(slide, shapes, status, x, y, w = 1.25) {
+  const style = getStatusStyle(status);
+
+  slide.addShape(shapes.roundRect, {
+    x,
+    y,
+    w,
+    h: 0.34,
+    rectRadius: 0.08,
+    fill: { color: style.fill },
+    line: { color: style.fill },
+  });
+
+  slide.addText(style.label, {
+    x: x + 0.06,
+    y: y + 0.08,
+    w: w - 0.12,
+    h: 0.18,
+    fontSize: 7.4,
+    bold: true,
+    color: style.color,
+    align: "center",
+    fit: "shrink",
+  });
+}
+
+function addHealthChip(slide, shapes, health, x, y, w = 1.45) {
+  slide.addShape(shapes.roundRect, {
+    x,
+    y,
+    w,
+    h: 0.34,
+    rectRadius: 0.08,
+    fill: { color: health.fill },
+    line: { color: health.fill },
+  });
+
+  slide.addText(health.label, {
+    x: x + 0.06,
+    y: y + 0.08,
+    w: w - 0.12,
+    h: 0.18,
+    fontSize: 7.6,
+    bold: true,
+    color: health.color,
+    align: "center",
+    fit: "shrink",
+  });
+}
+
+function addProgressBar(slide, shapes, percentage, x, y, w, h, color) {
+  const safePercent = clampPercent(percentage);
+  const filledWidth = (w * safePercent) / 100;
+  const barColor =
+    color ||
+    (safePercent >= 75
+      ? COLORS.green
+      : safePercent >= 40
+      ? COLORS.blue
+      : COLORS.amber);
+
+  slide.addShape(shapes.roundRect, {
+    x,
+    y,
+    w,
+    h,
+    rectRadius: 0.04,
+    fill: { color: COLORS.muted },
+    line: { color: COLORS.muted },
+  });
+
+  if (filledWidth > 0) {
+    slide.addShape(shapes.roundRect, {
+      x,
+      y,
+      w: filledWidth,
+      h,
+      rectRadius: 0.04,
+      fill: { color: barColor },
+      line: { color: barColor },
+    });
+  }
+
+  slide.addText(`${safePercent}%`, {
+    x: x + w + 0.08,
+    y: y - 0.04,
+    w: 0.55,
+    h: 0.2,
+    fontSize: 7,
+    bold: true,
+    color: COLORS.navy,
+    fit: "shrink",
+  });
+}
+
+function addProgressComparisonCard(
+  slide,
+  shapes,
+  progressMetrics,
+  health,
+  x,
+  y,
+  w,
+  h
+) {
+  slide.addShape(shapes.roundRect, {
+    x,
+    y,
+    w,
+    h,
+    rectRadius: 0.08,
+    fill: { color: COLORS.white },
+    line: { color: COLORS.softBorder, width: 1 },
+  });
+
+  slide.addShape(shapes.rect, {
+    x,
+    y,
+    w: 0.08,
+    h,
+    fill: { color: health.accent },
+    line: { color: health.accent },
+  });
+
+  slide.addText("Actual vs Planned Progress", {
+    x: x + 0.22,
+    y: y + 0.13,
+    w: 3.2,
+    h: 0.22,
+    fontSize: 8.8,
+    bold: true,
+    color: COLORS.navy,
+    fit: "shrink",
+  });
+
+  addHealthChip(slide, shapes, health, x + w - 1.72, y + 0.1, 1.42);
+
+  slide.addText("Planned", {
+    x: x + 0.24,
+    y: y + 0.53,
+    w: 0.75,
+    h: 0.18,
+    fontSize: 6.8,
+    bold: true,
+    color: COLORS.slate,
+    fit: "shrink",
+  });
+
+  addProgressBar(
+    slide,
+    shapes,
+    progressMetrics.plannedProgress,
+    x + 1.05,
+    y + 0.58,
+    w - 2.25,
+    0.09,
+    COLORS.blue
+  );
+
+  slide.addText("Actual", {
+    x: x + 0.24,
+    y: y + 0.83,
+    w: 0.75,
+    h: 0.18,
+    fontSize: 6.8,
+    bold: true,
+    color: COLORS.slate,
+    fit: "shrink",
+  });
+
+  addProgressBar(
+    slide,
+    shapes,
+    progressMetrics.actualProgress,
+    x + 1.05,
+    y + 0.88,
+    w - 2.25,
+    0.09,
+    health.accent
+  );
+
+  slide.addShape(shapes.roundRect, {
+    x: x + 0.24,
+    y: y + 1.13,
+    w: 1.6,
+    h: 0.32,
+    rectRadius: 0.08,
+    fill: { color: health.fill },
+    line: { color: health.fill },
+  });
+
+  slide.addText(`Gap: ${progressMetrics.gapLabel}`, {
+    x: x + 0.3,
+    y: y + 1.2,
+    w: 1.48,
+    h: 0.18,
+    fontSize: 7.2,
+    bold: true,
+    color: health.color,
+    align: "center",
+    fit: "shrink",
+  });
+
+  slide.addText(health.message, {
+    x: x + 2.05,
+    y: y + 1.18,
+    w: w - 2.35,
+    h: 0.22,
+    fontSize: 6.8,
+    color: COLORS.slate,
+    fit: "shrink",
+  });
+}
+
+function addSectionCard(
+  slide,
+  shapes,
+  title,
+  body,
+  x,
+  y,
+  w,
+  h,
+  accent = COLORS.blue
+) {
+  slide.addShape(shapes.roundRect, {
+    x,
+    y,
+    w,
+    h,
+    rectRadius: 0.08,
+    fill: { color: COLORS.card },
+    line: { color: COLORS.softBorder, width: 1 },
+  });
+
+  slide.addShape(shapes.rect, {
+    x,
+    y,
+    w: 0.07,
+    h,
+    fill: { color: accent },
+    line: { color: accent },
+  });
+
+  slide.addText(title, {
+    x: x + 0.18,
+    y: y + 0.12,
+    w: w - 0.32,
+    h: 0.22,
+    fontSize: 7.6,
+    bold: true,
+    color: COLORS.navy,
+    fit: "shrink",
+  });
+
+  slide.addText(truncateText(body, 220), {
+    x: x + 0.18,
+    y: y + 0.42,
+    w: w - 0.32,
+    h: Math.max(0.2, h - 0.5),
+    fontSize: 6.5,
+    color: COLORS.slate,
+    valign: "top",
+    fit: "shrink",
+    breakLine: false,
+  });
+}
+
+function addCoverSlide(pptx, shapes, projects, tasks, weeklyReports) {
+  const slide = pptx.addSlide();
+  slide.background = { color: COLORS.bg };
 
   const activeProjects = projects.filter(
     (project) => project.status !== "Archived"
@@ -306,59 +884,197 @@ function addCoverSlide(pptx, shapes, projects, tasks) {
     year: "numeric",
   });
 
-  slide.addText("Centralized Projects Report", {
-    x: 0.75,
-    y: 1.1,
-    w: 11.8,
-    h: 0.55,
-    fontSize: 30,
-    bold: true,
-    color: "111827",
-    fit: "shrink",
+  slide.addShape(shapes.rect, {
+    x: 0,
+    y: 0,
+    w: 13.333,
+    h: 7.5,
+    fill: { color: COLORS.bg },
+    line: { color: COLORS.bg },
   });
 
-  slide.addText("Combined project-wise management update", {
-    x: 0.78,
-    y: 1.78,
-    w: 11.4,
-    h: 0.35,
-    fontSize: 14,
-    color: "4B5563",
+  slide.addShape(shapes.rect, {
+    x: 0,
+    y: 0,
+    w: 4.15,
+    h: 7.5,
+    fill: { color: COLORS.navy },
+    line: { color: COLORS.navy },
   });
 
   slide.addShape(shapes.roundRect, {
-    x: 0.78,
-    y: 2.45,
-    w: 11.8,
-    h: 2.05,
+    x: 0.58,
+    y: 0.75,
+    w: 2.2,
+    h: 0.36,
     rectRadius: 0.08,
-    fill: { color: "F8FAFC" },
-    line: { color: "E5E7EB" },
+    fill: { color: COLORS.blue },
+    line: { color: COLORS.blue },
   });
 
-  addMetricBox(slide, shapes, "Live Projects", activeProjects.length, 1.15, 2.85, 2.15, 0.85);
-  addMetricBox(slide, shapes, "Total Tasks", totalTasks, 3.8, 2.85, 2.15, 0.85);
-  addMetricBox(slide, shapes, "Completed Tasks", completedTasks, 6.45, 2.85, 2.15, 0.85);
-  addMetricBox(slide, shapes, "Overall Completion", `${progress}%`, 9.1, 2.85, 2.15, 0.85);
+  slide.addText("MANAGER REPORT", {
+    x: 0.72,
+    y: 0.84,
+    w: 1.95,
+    h: 0.18,
+    fontSize: 7,
+    bold: true,
+    color: COLORS.white,
+    align: "center",
+    charSpace: 1,
+    fit: "shrink",
+  });
 
-  slide.addText(`Generated on: ${generatedDate}`, {
-    x: 0.82,
-    y: 5.2,
-    w: 11.6,
-    h: 0.32,
-    fontSize: 11,
-    color: "374151",
+  slide.addText("Centralized\nProjects\nReport", {
+    x: 0.6,
+    y: 1.55,
+    w: 3.0,
+    h: 1.55,
+    fontSize: 30,
+    bold: true,
+    color: COLORS.white,
+    breakLine: false,
+    fit: "shrink",
   });
 
   slide.addText(
-    "This report gives a consolidated view of live projects, project-wise updates, POC progress, proposal status, and documentation readiness.",
+    "Combined view of project progress, actual vs planned, POC updates, proposal status and documentation readiness.",
     {
-      x: 0.82,
-      y: 5.7,
-      w: 11.7,
-      h: 0.6,
-      fontSize: 10.5,
-      color: "4B5563",
+      x: 0.64,
+      y: 3.42,
+      w: 2.92,
+      h: 0.75,
+      fontSize: 10,
+      color: "CBD5E1",
+      fit: "shrink",
+    }
+  );
+
+  slide.addText(`Generated on ${generatedDate}`, {
+    x: 0.64,
+    y: 6.55,
+    w: 2.9,
+    h: 0.25,
+    fontSize: 8.5,
+    color: "CBD5E1",
+    fit: "shrink",
+  });
+
+  slide.addText("Portfolio Snapshot", {
+    x: 4.75,
+    y: 0.72,
+    w: 7.5,
+    h: 0.45,
+    fontSize: 24,
+    bold: true,
+    color: COLORS.navy,
+    fit: "shrink",
+  });
+
+  slide.addText(
+    "A clean management-level summary of all active project streams.",
+    {
+      x: 4.78,
+      y: 1.24,
+      w: 7.6,
+      h: 0.26,
+      fontSize: 10.2,
+      color: COLORS.slate,
+      fit: "shrink",
+    }
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Live Projects",
+    activeProjects.length,
+    4.78,
+    1.9,
+    1.85,
+    0.9,
+    COLORS.blue
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Total Tasks",
+    totalTasks,
+    6.9,
+    1.9,
+    1.85,
+    0.9,
+    COLORS.green
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Completed",
+    completedTasks,
+    9.02,
+    1.9,
+    1.85,
+    0.9,
+    COLORS.amber
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Reports",
+    weeklyReports.length,
+    11.14,
+    1.9,
+    1.85,
+    0.9,
+    COLORS.red
+  );
+
+  slide.addShape(shapes.roundRect, {
+    x: 4.78,
+    y: 3.25,
+    w: 8.18,
+    h: 1.05,
+    rectRadius: 0.08,
+    fill: { color: COLORS.card },
+    line: { color: COLORS.softBorder },
+  });
+
+  slide.addText("Overall Task Completion", {
+    x: 5.05,
+    y: 3.5,
+    w: 3.2,
+    h: 0.22,
+    fontSize: 9.2,
+    bold: true,
+    color: COLORS.navy,
+    fit: "shrink",
+  });
+
+  addProgressBar(slide, shapes, progress, 5.05, 3.9, 6.6, 0.12);
+
+  slide.addText("Report Coverage", {
+    x: 4.82,
+    y: 4.78,
+    w: 2.2,
+    h: 0.25,
+    fontSize: 11,
+    bold: true,
+    color: COLORS.navy,
+    fit: "shrink",
+  });
+
+  slide.addText(
+    "This deck provides a project-wise view with actual vs planned progress, schedule health, milestones, risks, issues, achievements, team notes, POC stages, proposal updates and document readiness.",
+    {
+      x: 4.82,
+      y: 5.15,
+      w: 7.9,
+      h: 0.85,
+      fontSize: 10,
+      color: COLORS.slate,
       fit: "shrink",
     }
   );
@@ -366,36 +1082,359 @@ function addCoverSlide(pptx, shapes, projects, tasks) {
   addFooter(slide, "Slide 1 | Cover");
 }
 
-function addLiveProjectsSlide(pptx, shapes, projects) {
+function addExecutiveSummarySlide(pptx, shapes, portfolioData) {
   const slide = pptx.addSlide();
-  slide.background = { color: "FFFFFF" };
 
-  addTopBar(slide, shapes);
+  addSlideHeader(
+    slide,
+    shapes,
+    "Executive Summary",
+    "Portfolio-level health summary with planned progress, actual progress and overall gap.",
+    "EXECUTIVE SUMMARY",
+    COLORS.bg
+  );
 
-  slide.addText("Live Projects Overview", {
-    x: 0.5,
-    y: 0.42,
-    w: 12.2,
-    h: 0.38,
-    fontSize: 22,
-    bold: true,
-    color: "111827",
+  const gapColor =
+    portfolioData.gap >= 0
+      ? COLORS.green
+      : portfolioData.gap <= -15
+      ? COLORS.red
+      : COLORS.amber;
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Active Projects",
+    portfolioData.activeProjects.length,
+    0.55,
+    1.55,
+    2.1,
+    0.85,
+    COLORS.blue
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "On Track",
+    portfolioData.onTrack,
+    2.9,
+    1.55,
+    2.1,
+    0.85,
+    COLORS.green
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "At Risk",
+    portfolioData.atRisk,
+    5.25,
+    1.55,
+    2.1,
+    0.85,
+    COLORS.amber
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Delayed",
+    portfolioData.delayed,
+    7.6,
+    1.55,
+    2.1,
+    0.85,
+    COLORS.red
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Overall Gap",
+    portfolioData.gapLabel,
+    9.95,
+    1.55,
+    2.1,
+    0.85,
+    gapColor
+  );
+
+  slide.addShape(shapes.roundRect, {
+    x: 0.55,
+    y: 2.75,
+    w: 12.25,
+    h: 1.55,
+    rectRadius: 0.08,
+    fill: { color: COLORS.white },
+    line: { color: COLORS.softBorder },
   });
 
-  slide.addText(
-    "List of active projects with planned start and target completion dates",
-    {
-      x: 0.52,
-      y: 0.88,
-      w: 12,
-      h: 0.24,
-      fontSize: 9.5,
-      color: "4B5563",
-    }
+  slide.addText("Portfolio Actual vs Planned", {
+    x: 0.85,
+    y: 3.0,
+    w: 3.2,
+    h: 0.22,
+    fontSize: 10,
+    bold: true,
+    color: COLORS.navy,
+    fit: "shrink",
+  });
+
+  slide.addText("Planned", {
+    x: 0.85,
+    y: 3.45,
+    w: 0.8,
+    h: 0.18,
+    fontSize: 7.2,
+    bold: true,
+    color: COLORS.slate,
+    fit: "shrink",
+  });
+
+  addProgressBar(
+    slide,
+    shapes,
+    portfolioData.plannedAverage,
+    1.75,
+    3.5,
+    9.6,
+    0.1,
+    COLORS.blue
+  );
+
+  slide.addText("Actual", {
+    x: 0.85,
+    y: 3.8,
+    w: 0.8,
+    h: 0.18,
+    fontSize: 7.2,
+    bold: true,
+    color: COLORS.slate,
+    fit: "shrink",
+  });
+
+  addProgressBar(
+    slide,
+    shapes,
+    portfolioData.actualAverage,
+    1.75,
+    3.85,
+    9.6,
+    0.1,
+    gapColor
+  );
+
+  addSectionCard(
+    slide,
+    shapes,
+    "Management View",
+    `Across ${portfolioData.activeProjects.length} active projects, ${portfolioData.onTrack} are on track, ${portfolioData.atRisk} are at risk, and ${portfolioData.delayed} are delayed. Overall actual progress is ${portfolioData.actualAverage}% against planned progress of ${portfolioData.plannedAverage}%.`,
+    0.55,
+    4.75,
+    5.95,
+    1.15,
+    COLORS.blue
+  );
+
+  addSectionCard(
+    slide,
+    shapes,
+    "Immediate Focus",
+    portfolioData.atRisk + portfolioData.delayed > 0
+      ? "Review projects marked as At Risk or Delayed. Validate blockers, support needed, revised timelines and next actions."
+      : "No major portfolio risk is visible from the available project data. Continue monitoring progress and weekly updates.",
+    6.85,
+    4.75,
+    5.95,
+    1.15,
+    portfolioData.atRisk + portfolioData.delayed > 0 ? COLORS.red : COLORS.green
+  );
+
+  addFooter(slide, "Slide 2 | Executive Summary");
+}
+
+function addProjectHealthMatrixSlide(pptx, shapes, portfolioData) {
+  const slide = pptx.addSlide();
+
+  addSlideHeader(
+    slide,
+    shapes,
+    "Project Health Matrix",
+    "Compact comparison of planned progress, actual progress, gap, health and next milestone.",
+    "PORTFOLIO MATRIX",
+    COLORS.bg
+  );
+
+  const rows = [
+    [
+      { text: "Project", options: { bold: true } },
+      { text: "Owner", options: { bold: true } },
+      { text: "Planned", options: { bold: true } },
+      { text: "Actual", options: { bold: true } },
+      { text: "Gap", options: { bold: true } },
+      { text: "Health", options: { bold: true } },
+      { text: "Next Milestone", options: { bold: true } },
+    ],
+    ...portfolioData.projectDetails.slice(0, 13).map((item) => [
+      safeText(item.project.name),
+      safeText(item.project.owner),
+      `${item.progressMetrics.plannedProgress}%`,
+      `${item.progressMetrics.actualProgress}%`,
+      item.progressMetrics.gapLabel,
+      item.health.label,
+      truncateText(makeUpcomingMilestoneText(item.projectTasks, item.latestReport), 80),
+    ]),
+  ];
+
+  slide.addTable(rows, {
+    x: 0.55,
+    y: 1.55,
+    w: 12.25,
+    h: 5.2,
+    border: { type: "solid", color: COLORS.border, pt: 0.5 },
+    fill: { color: COLORS.white },
+    color: COLORS.navy,
+    fontSize: 7.1,
+    valign: "mid",
+    fit: "shrink",
+    margin: 0.05,
+    autoFit: false,
+    colW: [2.5, 1.45, 1.05, 1.05, 0.85, 1.2, 4.15],
+    rowH: 0.34,
+  });
+
+  addFooter(slide, "Slide 3 | Project Health Matrix");
+}
+
+function addAttentionRequiredSlide(pptx, shapes, portfolioData) {
+  const slide = pptx.addSlide();
+
+  addSlideHeader(
+    slide,
+    shapes,
+    "At Risk / Delayed Projects",
+    "Focused view of projects that may need review, intervention or additional support.",
+    "ATTENTION REQUIRED",
+    COLORS.bg
+  );
+
+  const attentionProjects = portfolioData.projectDetails.filter(
+    (item) => item.health.label === "At Risk" || item.health.label === "Delayed"
+  );
+
+  if (attentionProjects.length === 0) {
+    addSectionCard(
+      slide,
+      shapes,
+      "No Immediate Attention Required",
+      "No active project is currently marked as At Risk or Delayed based on the available planned vs actual progress, blockers and status updates.",
+      0.9,
+      2.4,
+      11.5,
+      1.4,
+      COLORS.green
+    );
+
+    addFooter(slide, "Slide 4 | Attention Required");
+    return;
+  }
+
+  const rows = [
+    [
+      { text: "Project", options: { bold: true } },
+      { text: "Health", options: { bold: true } },
+      { text: "Gap", options: { bold: true } },
+      { text: "Blocked", options: { bold: true } },
+      { text: "Reason / Risk", options: { bold: true } },
+      { text: "Next Action", options: { bold: true } },
+    ],
+    ...attentionProjects.slice(0, 10).map((item) => [
+      safeText(item.project.name),
+      item.health.label,
+      item.progressMetrics.gapLabel,
+      String(item.stats.blockedTasks),
+      truncateText(makeRiskText(item.latestReport), 90),
+      truncateText(
+        item.latestReport?.nextWeekPlan ||
+          item.latestReport?.supportNeeded ||
+          "Review project plan and confirm recovery action.",
+        100
+      ),
+    ]),
+  ];
+
+  slide.addTable(rows, {
+    x: 0.55,
+    y: 1.55,
+    w: 12.25,
+    h: 5.1,
+    border: { type: "solid", color: COLORS.border, pt: 0.5 },
+    fill: { color: COLORS.white },
+    color: COLORS.navy,
+    fontSize: 7.1,
+    valign: "mid",
+    fit: "shrink",
+    margin: 0.05,
+    autoFit: false,
+    colW: [2.2, 1.1, 0.85, 0.8, 3.55, 3.75],
+    rowH: 0.36,
+  });
+
+  addFooter(slide, "Slide 4 | Attention Required");
+}
+
+function addLiveProjectsSlide(pptx, shapes, projects) {
+  const slide = pptx.addSlide();
+
+  addSlideHeader(
+    slide,
+    shapes,
+    "Live Projects Overview",
+    "Active projects with owner, status, planned start and target completion dates.",
+    "PORTFOLIO",
+    COLORS.bg
   );
 
   const activeProjects = projects.filter(
     (project) => project.status !== "Archived"
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Active Projects",
+    activeProjects.length,
+    0.55,
+    1.55,
+    2.15,
+    0.85,
+    COLORS.blue
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Archived",
+    projects.length - activeProjects.length,
+    2.95,
+    1.55,
+    2.15,
+    0.85,
+    COLORS.slate
+  );
+
+  addMetricCard(
+    slide,
+    shapes,
+    "Total Portfolio",
+    projects.length,
+    5.35,
+    1.55,
+    2.15,
+    0.85,
+    COLORS.green
   );
 
   const rows = [
@@ -403,8 +1442,8 @@ function addLiveProjectsSlide(pptx, shapes, projects) {
       { text: "Project", options: { bold: true } },
       { text: "Owner", options: { bold: true } },
       { text: "Status", options: { bold: true } },
-      { text: "Start Date", options: { bold: true } },
-      { text: "Target End Date", options: { bold: true } },
+      { text: "Start", options: { bold: true } },
+      { text: "Target End", options: { bold: true } },
     ],
     ...activeProjects.map((project) => [
       safeText(project.name),
@@ -417,21 +1456,22 @@ function addLiveProjectsSlide(pptx, shapes, projects) {
 
   slide.addTable(rows, {
     x: 0.55,
-    y: 1.4,
-    w: 12.2,
-    h: 5.2,
-    border: { type: "solid", color: "CBD5E1", pt: 0.5 },
-    fill: { color: "FFFFFF" },
-    color: "111827",
-    fontSize: 8.3,
+    y: 2.72,
+    w: 12.25,
+    h: 3.92,
+    border: { type: "solid", color: COLORS.border, pt: 0.5 },
+    fill: { color: COLORS.white },
+    color: COLORS.navy,
+    fontSize: 8,
     valign: "mid",
     fit: "shrink",
-    margin: 0.06,
+    margin: 0.07,
     autoFit: false,
-    colW: [4.0, 2.0, 1.7, 2.0, 2.5],
+    colW: [4.0, 2.0, 1.7, 2.0, 2.55],
+    rowH: 0.34,
   });
 
-  addFooter(slide, "Slide 2 | Live Projects Overview");
+  addFooter(slide, "Slide 5 | Live Projects Overview");
 }
 
 function addProjectUpdateSlide({
@@ -444,141 +1484,140 @@ function addProjectUpdateSlide({
   sprints,
   weeklyReports,
 }) {
-  const slide = pptx.addSlide();
-  slide.background = { color: "FFFFFF" };
-
-  addTopBar(slide, shapes);
-
   const projectTasks = getProjectTasks(project.id, tasks);
   const projectSprints = getProjectSprints(project.id, sprints);
   const latestReport = getLatestProjectReport(project.id, weeklyReports);
   const stats = getTaskStats(projectTasks);
+  const progressMetrics = getProgressMetrics(projectTasks, latestReport);
 
-  const projectStatus = latestReport?.overallStatus || project.status || "Not Updated";
-
-  slide.addText(project.name || `Project ${projectIndex + 1}`, {
-    x: 0.5,
-    y: 0.33,
-    w: 9.4,
-    h: 0.38,
-    fontSize: 20,
-    bold: true,
-    color: "111827",
-    fit: "shrink",
+  const health = getHealthStyle({
+    latestReport,
+    project,
+    stats,
+    progressMetrics,
   });
 
-  slide.addText(`Status: ${projectStatus}`, {
-    x: 10.1,
-    y: 0.38,
-    w: 2.7,
-    h: 0.3,
-    fontSize: 10,
-    bold: true,
-    color: "111827",
-    align: "right",
-    fit: "shrink",
-  });
+  const slide = pptx.addSlide();
 
-  slide.addText(
+  addSlideHeader(
+    slide,
+    shapes,
+    project.name || `Project ${projectIndex + 1}`,
     `Owner: ${safeText(project.owner)} | Start: ${formatDate(
       project.startDate
     )} | Target End: ${formatDate(project.targetEndDate)}`,
-    {
-      x: 0.52,
-      y: 0.8,
-      w: 12.1,
-      h: 0.25,
-      fontSize: 8.4,
-      color: "4B5563",
-      fit: "shrink",
-    }
+    `PROJECT ${projectIndex + 1} OF ${totalProjects}`,
+    health.background
   );
 
-  addMetricBox(slide, shapes, "Tasks", stats.totalTasks, 0.55, 1.18, 1.5, 0.72);
-  addMetricBox(slide, shapes, "Completed", stats.completedTasks, 2.2, 1.18, 1.5, 0.72);
-  addMetricBox(slide, shapes, "In Progress", stats.inProgressTasks, 3.85, 1.18, 1.5, 0.72);
-  addMetricBox(slide, shapes, "Blocked", stats.blockedTasks, 5.5, 1.18, 1.5, 0.72);
-  addMetricBox(slide, shapes, "Sprints", projectSprints.length, 7.15, 1.18, 1.5, 0.72);
-  addMetricBox(slide, shapes, "Milestones", stats.milestones, 8.8, 1.18, 1.5, 0.72);
-  addMetricBox(slide, shapes, "Progress", `${stats.averageProgress}%`, 10.45, 1.18, 1.5, 0.72);
+  slide.addShape(shapes.roundRect, {
+    x: 9.1,
+    y: 0.52,
+    w: 3.65,
+    h: 0.42,
+    rectRadius: 0.08,
+    fill: { color: COLORS.white },
+    line: { color: COLORS.softBorder },
+  });
 
-  addSectionBox(slide, shapes, "Current Status", makeProjectStatusText(project, latestReport), 0.55, 2.12, 3.0, 1.0);
-  addSectionBox(slide, shapes, "Major Milestone Achieved", makeMajorMilestoneText(projectTasks, latestReport), 3.75, 2.12, 3.0, 1.0);
-  addSectionBox(slide, shapes, "Upcoming Milestone", makeUpcomingMilestoneText(projectTasks, latestReport), 6.95, 2.12, 3.0, 1.0);
-  addSectionBox(slide, shapes, "Potential Risk", makeRiskText(latestReport), 10.15, 2.12, 2.65, 1.0);
+  slide.addText("Health", {
+    x: 9.26,
+    y: 0.65,
+    w: 0.58,
+    h: 0.16,
+    fontSize: 6.8,
+    bold: true,
+    color: COLORS.slate,
+    align: "center",
+    fit: "shrink",
+  });
 
-  addSectionBox(slide, shapes, "Outstanding Issues with Justification", makeIssuesText(latestReport), 0.55, 3.35, 4.0, 1.15);
-  addSectionBox(slide, shapes, "Challenges Faced by Team", makeChallengesText(latestReport), 4.75, 3.35, 4.0, 1.15);
-  addSectionBox(slide, shapes, "Achievements", makeAchievementsText(latestReport), 8.95, 3.35, 3.85, 1.15);
+  addHealthChip(slide, shapes, health, 10.05, 0.56, 1.25);
 
-  addSectionBox(slide, shapes, "Team Members", makeTeamText(project, latestReport, projectTasks), 0.55, 4.75, 4.0, 1.0);
-  addSectionBox(slide, shapes, "Next Steps", latestReport?.nextWeekPlan || "Next steps have not been updated.", 4.75, 4.75, 4.0, 1.0);
-  addSectionBox(slide, shapes, "Manager Remarks", latestReport?.pmRemarks || latestReport?.leadershipMessage || "No manager remarks available.", 8.95, 4.75, 3.85, 1.0);
+  addStatusChip(
+    slide,
+    shapes,
+    latestReport?.overallStatus || project.status || "Not Updated",
+    11.45,
+    0.56,
+    1.15
+  );
+
+  addMetricCard(slide, shapes, "Tasks", stats.totalTasks, 0.55, 1.5, 1.45, 0.72, COLORS.blue);
+  addMetricCard(slide, shapes, "Completed", stats.completedTasks, 2.15, 1.5, 1.45, 0.72, COLORS.green);
+  addMetricCard(slide, shapes, "In Progress", stats.inProgressTasks, 3.75, 1.5, 1.45, 0.72, COLORS.amber);
+  addMetricCard(slide, shapes, "Blocked", stats.blockedTasks, 5.35, 1.5, 1.45, 0.72, COLORS.red);
+  addMetricCard(slide, shapes, "Sprints", projectSprints.length, 6.95, 1.5, 1.45, 0.72, COLORS.blue);
+  addMetricCard(slide, shapes, "Milestones", stats.milestones, 8.55, 1.5, 1.45, 0.72, COLORS.green);
+  addMetricCard(slide, shapes, "Gap", progressMetrics.gapLabel, 10.15, 1.5, 1.45, 0.72, health.accent);
+
+  addProgressComparisonCard(
+    slide,
+    shapes,
+    progressMetrics,
+    health,
+    0.55,
+    2.45,
+    12.25,
+    1.48
+  );
+
+  addSectionCard(slide, shapes, "Current Status", makeProjectStatusText(project, latestReport), 0.55, 4.15, 3.0, 0.78, health.accent);
+  addSectionCard(slide, shapes, "Major Milestone Achieved", makeMajorMilestoneText(projectTasks, latestReport), 3.75, 4.15, 3.0, 0.78, COLORS.green);
+  addSectionCard(slide, shapes, "Upcoming Milestone", makeUpcomingMilestoneText(projectTasks, latestReport), 6.95, 4.15, 3.0, 0.78, COLORS.amber);
+  addSectionCard(slide, shapes, "Potential Risk", makeRiskText(latestReport), 10.15, 4.15, 2.65, 0.78, COLORS.red);
+
+  addSectionCard(slide, shapes, "Outstanding Issues with Justification", makeIssuesText(latestReport), 0.55, 5.15, 4.0, 0.85, COLORS.red);
+  addSectionCard(slide, shapes, "Challenges Faced by Team", makeChallengesText(latestReport), 4.75, 5.15, 4.0, 0.85, COLORS.amber);
+  addSectionCard(slide, shapes, "Achievements", makeAchievementsText(latestReport), 8.95, 5.15, 3.85, 0.85, COLORS.green);
+
+  addSectionCard(slide, shapes, "Team Members", makeTeamText(project, latestReport, projectTasks), 0.55, 6.1, 4.0, 0.72, COLORS.blue);
+  addSectionCard(slide, shapes, "Next Steps", latestReport?.nextWeekPlan || "Next steps have not been updated.", 4.75, 6.1, 4.0, 0.72, COLORS.navy);
+  addSectionCard(slide, shapes, "Manager Remarks", latestReport?.pmRemarks || latestReport?.leadershipMessage || "No manager remarks available.", 8.95, 6.1, 3.85, 0.72, COLORS.slate);
 
   addFooter(
     slide,
-    `Slide ${projectIndex + 3} | Project ${projectIndex + 1} of ${totalProjects}`
+    `Project ${projectIndex + 1} of ${totalProjects} | ${health.label}`
   );
 }
 
 function addPocSlide(pptx, shapes, projects, weeklyReports) {
   const slide = pptx.addSlide();
-  slide.background = { color: "FFFFFF" };
 
-  addTopBar(slide, shapes);
-
-  slide.addText("Proof of Concepts Update", {
-    x: 0.5,
-    y: 0.4,
-    w: 12.2,
-    h: 0.38,
-    fontSize: 22,
-    bold: true,
-    color: "111827",
-  });
-
-  slide.addText(
-    "Consolidated view of POC progress across scope, development, internal demo, final demo, and next steps.",
-    {
-      x: 0.52,
-      y: 0.88,
-      w: 12,
-      h: 0.25,
-      fontSize: 9.3,
-      color: "4B5563",
-    }
+  addSlideHeader(
+    slide,
+    shapes,
+    "Proof of Concept Updates",
+    "Stage-wise consolidated progress for POC scope, development, demos, feedback and next steps.",
+    "POC TRACKER",
+    COLORS.bg
   );
 
   const pocFields = [
     {
-      title: "Scope Definition & Acceptance Criteria Status",
-      explanation:
-        "Items where scope, requirements, success criteria, and acceptance points are still being finalized.",
+      title: "Scope & Acceptance",
       key: "pocScopeAcceptanceStatus",
+      accent: COLORS.blue,
     },
     {
-      title: "POC Development",
-      explanation:
-        "Items where actual development work has started and the team is building the required solution.",
+      title: "Development",
       key: "pocDevelopmentStatus",
+      accent: COLORS.green,
     },
     {
-      title: "POC Internal Demo & Feedback Incorporation",
-      explanation:
-        "Items reviewed internally and updated based on feedback received.",
+      title: "Internal Demo",
       key: "pocInternalDemoStatus",
+      accent: COLORS.amber,
     },
     {
-      title: "POC Final Demo",
-      explanation:
-        "Completed POC presented to stakeholders for final review and confirmation.",
+      title: "Final Demo",
       key: "pocFinalDemoStatus",
+      accent: COLORS.red,
     },
     {
       title: "Next Steps",
-      explanation:
-        "Immediate actions required to move POCs forward, including closures, approvals, demos, and next-phase planning.",
       key: "pocNextSteps",
+      accent: COLORS.navy,
     },
   ];
 
@@ -587,10 +1626,50 @@ function addPocSlide(pptx, shapes, projects, weeklyReports) {
   );
 
   pocFields.forEach((field, index) => {
+    const x = 0.75 + index * 2.48;
+
+    slide.addShape(shapes.roundRect, {
+      x,
+      y: 1.6,
+      w: 2.05,
+      h: 0.48,
+      rectRadius: 0.08,
+      fill: { color: field.accent },
+      line: { color: field.accent },
+    });
+
+    slide.addText(field.title, {
+      x: x + 0.1,
+      y: 1.73,
+      w: 1.85,
+      h: 0.2,
+      fontSize: 7.8,
+      bold: true,
+      color: COLORS.white,
+      align: "center",
+      fit: "shrink",
+    });
+
+    if (index < pocFields.length - 1) {
+      slide.addText(">", {
+        x: x + 2.1,
+        y: 1.72,
+        w: 0.32,
+        h: 0.2,
+        fontSize: 12,
+        bold: true,
+        color: COLORS.slate2,
+        align: "center",
+        fit: "shrink",
+      });
+    }
+  });
+
+  pocFields.forEach((field, index) => {
     const x = index % 2 === 0 ? 0.55 : 6.9;
-    const y = index < 2 ? 1.45 : index < 4 ? 3.05 : 4.65;
+    const y = index < 2 ? 2.55 : index < 4 ? 4.0 : 5.45;
     const w = index === 4 ? 12.25 : 5.9;
-    const h = index === 4 ? 1.45 : 1.25;
+    const h = index === 4 ? 1.0 : 1.05;
 
     const projectUpdates = activeProjects
       .map((project) => {
@@ -604,17 +1683,16 @@ function addPocSlide(pptx, shapes, projects, weeklyReports) {
       .filter(Boolean)
       .join("\n");
 
-    addSectionBox(
+    addSectionCard(
       slide,
       shapes,
       field.title,
-      `${field.explanation}\n\n${
-        projectUpdates || "No project-level POC update has been added yet."
-      }`,
+      projectUpdates || "No project-level POC update has been added yet.",
       x,
       y,
       w,
-      h
+      h,
+      field.accent
     );
   });
 
@@ -629,35 +1707,34 @@ function addProposalDocumentationSlide(
   projectDocuments
 ) {
   const slide = pptx.addSlide();
-  slide.background = { color: "FFFFFF" };
 
-  addTopBar(slide, shapes);
-
-  slide.addText("Proposals & Documentation Update", {
-    x: 0.5,
-    y: 0.4,
-    w: 12.2,
-    h: 0.38,
-    fontSize: 22,
-    bold: true,
-    color: "111827",
-  });
-
-  slide.addText(
-    "Project-wise view of proposals prepared, documentation status, and documents added to the tool.",
-    {
-      x: 0.52,
-      y: 0.88,
-      w: 12,
-      h: 0.25,
-      fontSize: 9.3,
-      color: "4B5563",
-    }
+  addSlideHeader(
+    slide,
+    shapes,
+    "Proposals & Documentation Update",
+    "Project-wise proposal status, documentation status and documents added to the tool.",
+    "DOCUMENTATION",
+    COLORS.bg
   );
 
   const activeProjects = projects.filter(
     (project) => project.status !== "Archived"
   );
+
+  const proposalUpdated = activeProjects.filter((project) => {
+    const report = getLatestProjectReport(project.id, weeklyReports);
+    return Boolean(report?.proposalStatus);
+  }).length;
+
+  const documentationUpdated = activeProjects.filter((project) => {
+    const report = getLatestProjectReport(project.id, weeklyReports);
+    return Boolean(report?.documentationStatus);
+  }).length;
+
+  addMetricCard(slide, shapes, "Projects", activeProjects.length, 0.55, 1.52, 2.1, 0.78, COLORS.blue);
+  addMetricCard(slide, shapes, "Proposal Updates", proposalUpdated, 2.9, 1.52, 2.1, 0.78, COLORS.green);
+  addMetricCard(slide, shapes, "Documentation Updates", documentationUpdated, 5.25, 1.52, 2.1, 0.78, COLORS.amber);
+  addMetricCard(slide, shapes, "Documents Added", projectDocuments.length, 7.6, 1.52, 2.1, 0.78, COLORS.navy);
 
   const rows = [
     [
@@ -688,18 +1765,19 @@ function addProposalDocumentationSlide(
 
   slide.addTable(rows, {
     x: 0.55,
-    y: 1.35,
+    y: 2.65,
     w: 12.25,
-    h: 5.4,
-    border: { type: "solid", color: "CBD5E1", pt: 0.5 },
-    fill: { color: "FFFFFF" },
-    color: "111827",
-    fontSize: 7.7,
+    h: 4.0,
+    border: { type: "solid", color: COLORS.border, pt: 0.5 },
+    fill: { color: COLORS.white },
+    color: COLORS.navy,
+    fontSize: 7.5,
     valign: "mid",
     fit: "shrink",
-    margin: 0.05,
+    margin: 0.055,
     autoFit: false,
     colW: [2.7, 2.3, 2.5, 3.3, 1.45],
+    rowH: 0.34,
   });
 
   addFooter(slide, "Proposals & Documentation Update");
@@ -734,11 +1812,21 @@ export async function generateCentralizedManagerPpt({
     lang: "en-US",
   };
 
+  const portfolioData = getPortfolioHealthData(
+    projects,
+    tasks,
+    sprints,
+    weeklyReports
+  );
+
   const activeProjects = projects.filter(
     (project) => project.status !== "Archived"
   );
 
-  addCoverSlide(pptx, shapes, projects, tasks);
+  addCoverSlide(pptx, shapes, projects, tasks, weeklyReports);
+  addExecutiveSummarySlide(pptx, shapes, portfolioData);
+  addProjectHealthMatrixSlide(pptx, shapes, portfolioData);
+  addAttentionRequiredSlide(pptx, shapes, portfolioData);
   addLiveProjectsSlide(pptx, shapes, projects);
 
   activeProjects.forEach((project, index) => {
@@ -755,6 +1843,7 @@ export async function generateCentralizedManagerPpt({
   });
 
   addPocSlide(pptx, shapes, projects, weeklyReports);
+
   addProposalDocumentationSlide(
     pptx,
     shapes,
