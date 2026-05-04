@@ -57,13 +57,19 @@ function normalizeProject(project = {}) {
 
   return {
     id: project.id || makeId("project"),
+
+    cloudId: project.cloudId || project.dbId || "",
+    dbId: project.dbId || project.cloudId || "",
+
     userId: project.userId || project.user_id || "",
+
     name: project.name?.trim() || "Untitled Project",
     owner: project.owner || "",
     description: project.description || "",
     status: project.status || "Active",
     startDate: project.startDate || "",
     targetEndDate: project.targetEndDate || "",
+
     createdAt: project.createdAt || timestamp,
     updatedAt: project.updatedAt || timestamp,
   };
@@ -259,10 +265,21 @@ function buildWorkspaceFromCloudProjects(cloudProjects = []) {
       ...projectData,
       ...project,
       id: projectData.id || project.id,
+      cloudId: project.cloudId || project.dbId || project.id || "",
+      dbId: project.dbId || project.cloudId || project.id || "",
       userId: project.userId || project.user_id || projectData.userId || "",
     });
 
-    projects.push(normalizedProject);
+    const alreadyExists = projects.some(
+      (existingProject) =>
+        existingProject.id === normalizedProject.id ||
+        existingProject.cloudId === normalizedProject.cloudId ||
+        existingProject.dbId === normalizedProject.dbId
+    );
+
+    if (!alreadyExists) {
+      projects.push(normalizedProject);
+    }
 
     if (Array.isArray(projectData.sprints)) {
       projectData.sprints.forEach((sprint) => {
@@ -592,130 +609,282 @@ export const usePlannerStore = create((set, get) => ({
     });
   },
 
-addProject: (project) => {
-  set((state) => {
+  addProject: (project) => {
+    const timestamp = nowIso();
+
     const newProject = normalizeProject({
       ...project,
-      userId: state.currentUserId,
+      id: project.id || makeId("project"),
+      userId: get().currentUserId,
+      createdAt: project.createdAt || timestamp,
+      updatedAt: timestamp,
     });
 
-    const next = {
-      ...state,
-      projects: [...state.projects, newProject],
-    };
+    set((state) => {
+      const alreadyExists = state.projects.some((existingProject) => {
+        if (existingProject.id === newProject.id) return true;
 
-    persist(next);
+        if (
+          newProject.cloudId &&
+          existingProject.cloudId &&
+          existingProject.cloudId === newProject.cloudId
+        ) {
+          return true;
+        }
+
+        if (
+          newProject.dbId &&
+          existingProject.dbId &&
+          existingProject.dbId === newProject.dbId
+        ) {
+          return true;
+        }
+
+        return false;
+      });
+
+      if (alreadyExists) {
+        return state;
+      }
+
+      const next = {
+        ...state,
+        projects: [...state.projects, newProject],
+      };
+
+      persist(next);
+
+      return next;
+    });
+
+    const latestState = get();
 
     saveProject({
       ...newProject,
-      userId: state.currentUserId,
+      userId: latestState.currentUserId,
+
       projects: [newProject],
       sprints: [],
       tasks: [],
       baselineSnapshots: [],
       weeklyReports: [],
       projectDocuments: [],
-      plannerSettings: state.plannerSettings,
+
+      plannerSettings: latestState.plannerSettings,
       savedAt: nowIso(),
       saveType: "single_project_workspace",
     })
       .then((savedProject) => {
-        if (!savedProject?.cloudId) return;
+        if (!savedProject) return;
 
-        set((latestState) => {
-          const updatedState = {
-            ...latestState,
-            projects: latestState.projects.map((existingProject) =>
+        set((state) => {
+          const next = {
+            ...state,
+            projects: state.projects.map((existingProject) =>
               existingProject.id === newProject.id
                 ? {
                     ...existingProject,
-                    cloudId: savedProject.cloudId,
-                    dbId: savedProject.dbId,
-                    userId: savedProject.userId || latestState.currentUserId,
-                    updatedAt: savedProject.updatedAt || existingProject.updatedAt,
+                    cloudId: savedProject.cloudId || savedProject.dbId || "",
+                    dbId: savedProject.dbId || savedProject.cloudId || "",
+                    userId: savedProject.userId || state.currentUserId,
+                    updatedAt: savedProject.updatedAt || nowIso(),
                   }
                 : existingProject
             ),
           };
 
-          persist(updatedState);
-          return updatedState;
+          persist(next);
+
+          return next;
         });
       })
       .catch((error) => {
         console.error("Failed to save project to Supabase:", error);
+
         alert(
           error?.message ||
-            "Project was added locally, but failed to save in Supabase."
+            "Project was added locally, but failed to save in Supabase. Please click Save Now after checking your connection."
         );
       });
 
-    return next;
-  });
-},
+    return newProject;
+  },
 
   updateProject: (projectId, updates) => {
     set((state) => {
+      let updatedProject = null;
+
       const next = {
         ...state,
-        projects: state.projects.map((project) =>
-          project.id === projectId
-            ? {
-                ...project,
-                ...updates,
-                userId: project.userId || state.currentUserId,
-                updatedAt: nowIso(),
-              }
-            : project
-        ),
+        projects: state.projects.map((project) => {
+          const isTarget =
+            project.id === projectId ||
+            project.cloudId === projectId ||
+            project.dbId === projectId;
+
+          if (!isTarget) return project;
+
+          updatedProject = normalizeProject({
+            ...project,
+            ...updates,
+            id: project.id,
+            cloudId: project.cloudId || updates.cloudId || updates.dbId || "",
+            dbId: project.dbId || updates.dbId || updates.cloudId || "",
+            userId: project.userId || state.currentUserId,
+            createdAt: project.createdAt,
+            updatedAt: nowIso(),
+          });
+
+          return updatedProject;
+        }),
       };
 
       persist(next);
-      persistCurrentWorkspaceToCloud(next);
+
+      if (updatedProject) {
+        const latestPayload = {
+          ...updatedProject,
+          userId: state.currentUserId,
+          projects: [updatedProject],
+          sprints: next.sprints.filter(
+            (sprint) => sprint.projectId === updatedProject.id
+          ),
+          tasks: next.tasks.filter((task) => task.projectId === updatedProject.id),
+          baselineSnapshots: next.baselineSnapshots.filter(
+            (snapshot) =>
+              !snapshot.projectId || snapshot.projectId === updatedProject.id
+          ),
+          weeklyReports: next.weeklyReports.filter(
+            (report) => report.projectId === updatedProject.id
+          ),
+          projectDocuments: next.projectDocuments.filter(
+            (document) => document.projectId === updatedProject.id
+          ),
+          plannerSettings: next.plannerSettings,
+          savedAt: nowIso(),
+          saveType: "single_project_workspace",
+          fullWorkspaceSnapshot: makeWorkspacePayload(next),
+        };
+
+        saveProject(latestPayload).catch((error) => {
+          console.error("Failed to update project in Supabase:", error);
+        });
+      }
 
       return next;
     });
   },
 
   deleteProject: (projectId) => {
+    const stateBeforeDelete = get();
+
+    const projectToDelete = stateBeforeDelete.projects.find(
+      (project) =>
+        project.id === projectId ||
+        project.cloudId === projectId ||
+        project.dbId === projectId
+    );
+
+    const deleteIds = Array.from(
+      new Set(
+        [
+          projectId,
+          projectToDelete?.id,
+          projectToDelete?.cloudId,
+          projectToDelete?.dbId,
+        ].filter(Boolean)
+      )
+    );
+
+    const shouldRemoveProject = (project) =>
+      deleteIds.includes(project.id) ||
+      deleteIds.includes(project.cloudId) ||
+      deleteIds.includes(project.dbId);
+
+    const shouldRemoveByProjectId = (item) =>
+      deleteIds.includes(item.projectId);
+
     set((state) => {
       const next = {
         ...state,
-        projects: state.projects.filter((project) => project.id !== projectId),
 
-        sprints: state.sprints.filter(
-          (sprint) => sprint.projectId !== projectId
+        projects: state.projects.filter(
+          (project) => !shouldRemoveProject(project)
         ),
 
-        tasks: state.tasks.filter((task) => task.projectId !== projectId),
+        sprints: state.sprints.filter(
+          (sprint) => !shouldRemoveByProjectId(sprint)
+        ),
+
+        tasks: state.tasks.filter((task) => !shouldRemoveByProjectId(task)),
 
         baselineSnapshots: state.baselineSnapshots.filter(
-          (snapshot) => snapshot.projectId !== projectId
+          (snapshot) => !deleteIds.includes(snapshot.projectId)
         ),
 
         weeklyReports: state.weeklyReports.filter(
-          (report) => report.projectId !== projectId
+          (report) => !shouldRemoveByProjectId(report)
         ),
 
         projectDocuments: state.projectDocuments.filter(
-          (document) => document.projectId !== projectId
+          (document) => !shouldRemoveByProjectId(document)
         ),
       };
 
       persist(next);
 
-      deleteProjectCloud(projectId).catch((error) => {
-        console.error("Failed to delete project from Supabase:", error);
-      });
-
       return next;
     });
+
+    deleteProjectCloud(projectToDelete || projectId)
+      .then(() => {
+        const latest = get();
+
+        const latestAfterDelete = {
+          ...latest,
+
+          projects: latest.projects.filter(
+            (project) => !shouldRemoveProject(project)
+          ),
+
+          sprints: latest.sprints.filter(
+            (sprint) => !shouldRemoveByProjectId(sprint)
+          ),
+
+          tasks: latest.tasks.filter((task) => !shouldRemoveByProjectId(task)),
+
+          baselineSnapshots: latest.baselineSnapshots.filter(
+            (snapshot) => !deleteIds.includes(snapshot.projectId)
+          ),
+
+          weeklyReports: latest.weeklyReports.filter(
+            (report) => !shouldRemoveByProjectId(report)
+          ),
+
+          projectDocuments: latest.projectDocuments.filter(
+            (document) => !shouldRemoveByProjectId(document)
+          ),
+        };
+
+        persist(latestAfterDelete);
+      })
+      .catch((error) => {
+        console.error("Failed to delete project from Supabase:", error);
+
+        alert(
+          error?.message ||
+            "Project was deleted locally, but failed to delete from Supabase."
+        );
+      });
   },
 
   duplicateProject: (projectId) => {
     set((state) => {
       const originalProject = state.projects.find(
-        (project) => project.id === projectId
+        (project) =>
+          project.id === projectId ||
+          project.cloudId === projectId ||
+          project.dbId === projectId
       );
 
       if (!originalProject) return state;
@@ -723,57 +892,61 @@ addProject: (project) => {
       const newProjectId = makeId("project");
       const timestamp = nowIso();
 
-      const duplicatedProject = {
+      const duplicatedProject = normalizeProject({
         ...originalProject,
         id: newProjectId,
+        cloudId: "",
+        dbId: "",
         userId: state.currentUserId,
         name: `${originalProject.name} Copy`,
         createdAt: timestamp,
         updatedAt: timestamp,
-      };
+      });
 
       const sprintIdMap = {};
       const duplicatedSprints = state.sprints
-        .filter((sprint) => sprint.projectId === projectId)
+        .filter((sprint) => sprint.projectId === originalProject.id)
         .map((sprint) => {
           const newSprintId = makeId("sprint");
           sprintIdMap[sprint.id] = newSprintId;
 
-          return {
+          return normalizeSprint({
             ...sprint,
             id: newSprintId,
             userId: state.currentUserId,
             projectId: newProjectId,
             createdAt: timestamp,
             updatedAt: timestamp,
-          };
+          });
         });
 
       const taskIdMap = {};
       const sourceTasks = state.tasks.filter(
-        (task) => task.projectId === projectId
+        (task) => task.projectId === originalProject.id
       );
 
       sourceTasks.forEach((task) => {
         taskIdMap[task.id] = makeId("task");
       });
 
-      const duplicatedTasks = sourceTasks.map((task) => ({
-        ...task,
-        id: taskIdMap[task.id],
-        userId: state.currentUserId,
-        projectId: newProjectId,
-        sprintId: sprintIdMap[task.sprintId] || "",
-        parentTaskId: taskIdMap[task.parentTaskId] || "",
-        dependencyIds: (task.dependencyIds || [])
-          .map((id) => taskIdMap[id])
-          .filter(Boolean),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      }));
+      const duplicatedTasks = sourceTasks.map((task) =>
+        normalizeTask({
+          ...task,
+          id: taskIdMap[task.id],
+          userId: state.currentUserId,
+          projectId: newProjectId,
+          sprintId: sprintIdMap[task.sprintId] || "",
+          parentTaskId: taskIdMap[task.parentTaskId] || "",
+          dependencyIds: (task.dependencyIds || [])
+            .map((id) => taskIdMap[id])
+            .filter(Boolean),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+      );
 
       const duplicatedReports = state.weeklyReports
-        .filter((report) => report.projectId === projectId)
+        .filter((report) => report.projectId === originalProject.id)
         .map((report) =>
           normalizeWeeklyReport({
             ...report,
@@ -788,7 +961,7 @@ addProject: (project) => {
         );
 
       const duplicatedDocuments = state.projectDocuments
-        .filter((document) => document.projectId === projectId)
+        .filter((document) => document.projectId === originalProject.id)
         .map((document) =>
           normalizeProjectDocument({
             ...document,
@@ -814,6 +987,7 @@ addProject: (project) => {
 
       saveProject({
         ...duplicatedProject,
+        userId: state.currentUserId,
         projects: [duplicatedProject],
         sprints: duplicatedSprints,
         tasks: duplicatedTasks,

@@ -9,9 +9,7 @@ import {
   KanbanSquare,
   ListTodo,
   Milestone,
-  RefreshCw,
   Save,
-  Trash2,
 } from "lucide-react";
 
 import { usePlannerStore } from "../store/usePlannerStore";
@@ -63,6 +61,15 @@ const TABS = [
   { key: "documents", label: "Documents" },
   { key: "reports", label: "Reports" },
 ];
+
+const emptyProjectEditForm = {
+  name: "",
+  owner: "",
+  status: "Active",
+  startDate: "",
+  targetEndDate: "",
+  description: "",
+};
 
 function formatCloudDate(value) {
   if (!value) return "Not saved yet";
@@ -129,6 +136,156 @@ function EmptyProjectNotice() {
   );
 }
 
+function ProjectEditForm({
+  form,
+  onChange,
+  onSubmit,
+  onCancel,
+  isSaving = false,
+}) {
+  function handleChange(event) {
+    const { name, value } = event.target;
+    onChange((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    onSubmit();
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-3xl border border-blue-200 bg-blue-50 p-4"
+    >
+      <div className="mb-4">
+        <h3 className="text-base font-semibold tracking-tight text-slate-900">
+          Edit Project Details
+        </h3>
+
+        <p className="mt-1 text-xs text-slate-600">
+          Update the imported or created project information here.
+        </p>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Project Name
+          </label>
+
+          <input
+            name="name"
+            value={form.name}
+            onChange={handleChange}
+            placeholder="Project name"
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Owner
+          </label>
+
+          <input
+            name="owner"
+            value={form.owner}
+            onChange={handleChange}
+            placeholder="Project owner"
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Status
+          </label>
+
+          <select
+            name="status"
+            value={form.status}
+            onChange={handleChange}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
+          >
+            <option value="Planned">Planned</option>
+            <option value="Active">Active</option>
+            <option value="On Track">On Track</option>
+            <option value="At Risk">At Risk</option>
+            <option value="Delayed">Delayed</option>
+            <option value="On Hold">On Hold</option>
+            <option value="Completed">Completed</option>
+            <option value="Archived">Archived</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Start Date
+          </label>
+
+          <input
+            name="startDate"
+            type="date"
+            value={form.startDate}
+            onChange={handleChange}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Target End Date
+          </label>
+
+          <input
+            name="targetEndDate"
+            type="date"
+            value={form.targetEndDate}
+            onChange={handleChange}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
+          />
+        </div>
+
+        <div className="xl:col-span-2">
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Description
+          </label>
+
+          <textarea
+            name="description"
+            value={form.description}
+            onChange={handleChange}
+            placeholder="Project description"
+            className="min-h-[110px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isSaving ? "Saving..." : "Save Project Details"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export default function PlannerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -151,6 +308,8 @@ export default function PlannerPage() {
     baselineSnapshots,
     createBaselineSnapshot,
     importPlannerData,
+
+    updateProject,
 
     addSprint,
     updateSprint,
@@ -185,6 +344,10 @@ export default function PlannerPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState("");
   const [showCloudBackups, setShowCloudBackups] = useState(false);
+
+  const [isProjectEditOpen, setIsProjectEditOpen] = useState(false);
+  const [projectEditForm, setProjectEditForm] = useState(emptyProjectEditForm);
+  const [projectEditSaving, setProjectEditSaving] = useState(false);
 
   const autoSaveTimerRef = useRef(null);
   const lastSavedSnapshotRef = useRef("");
@@ -263,6 +426,23 @@ export default function PlannerPage() {
     if (!selectedProjectId) return null;
     return projects.find((project) => project.id === selectedProjectId) || null;
   }, [projects, selectedProjectId]);
+
+  useEffect(() => {
+    if (!selectedProject) {
+      setProjectEditForm(emptyProjectEditForm);
+      setIsProjectEditOpen(false);
+      return;
+    }
+
+    setProjectEditForm({
+      name: selectedProject.name || "",
+      owner: selectedProject.owner || "",
+      status: selectedProject.status || "Active",
+      startDate: selectedProject.startDate || "",
+      targetEndDate: selectedProject.targetEndDate || "",
+      description: selectedProject.description || "",
+    });
+  }, [selectedProject?.id]);
 
   const summary = summarizeProject(filteredTasks);
 
@@ -483,6 +663,47 @@ export default function PlannerPage() {
   function handleSelectConflictTask(taskId) {
     setActiveTab("schedule");
     setFocusedTaskId(taskId);
+  }
+
+  async function handleProjectDetailsSave() {
+    if (!selectedProject) {
+      setCloudError("Please select a project before editing project details.");
+      return;
+    }
+
+    if (!projectEditForm.name.trim()) {
+      setCloudError("Project name cannot be empty.");
+      return;
+    }
+
+    try {
+      setProjectEditSaving(true);
+      setCloudMessage("");
+      setCloudError("");
+
+      const updatedProject = {
+        ...selectedProject,
+        name: projectEditForm.name.trim(),
+        owner: projectEditForm.owner.trim(),
+        status: projectEditForm.status || "Active",
+        startDate: projectEditForm.startDate || "",
+        targetEndDate: projectEditForm.targetEndDate || "",
+        description: projectEditForm.description.trim(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      updateProject(selectedProject.id, updatedProject);
+
+      setHasUnsavedChanges(true);
+      setIsProjectEditOpen(false);
+      setCloudMessage(
+        "Project details updated. Use Save Now to sync immediately."
+      );
+    } catch (error) {
+      setCloudError(error.message || "Failed to update project details.");
+    } finally {
+      setProjectEditSaving(false);
+    }
   }
 
   async function fetchCloudProjects() {
@@ -877,6 +1098,72 @@ export default function PlannerPage() {
         ) : null}
       </section>
 
+      {showCloudBackups ? (
+        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold tracking-tight text-slate-900">
+                Cloud Backups
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Open or delete previously saved planner backups.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={fetchCloudProjects}
+              disabled={cloudLoading}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Refresh
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-2">
+            {cloudProjects.length === 0 ? (
+              <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-500">
+                No cloud backups found.
+              </div>
+            ) : (
+              cloudProjects.map((project) => (
+                <div
+                  key={project.id}
+                  className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:flex-row md:items-center md:justify-between"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">
+                      {project.name || "Untitled Backup"}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Updated: {formatCloudDate(project.updated_at)}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCloudProject(project)}
+                      className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                    >
+                      Open
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCloudProject(project.id)}
+                      className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      ) : null}
+
       <section className="grid gap-3 xl:grid-cols-[1fr_1.2fr]">
         <PlannerProjectFilter
           projects={projects}
@@ -911,39 +1198,71 @@ export default function PlannerPage() {
         <div className="space-y-3">
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             {selectedProject ? (
-              <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                      <FolderKanban className="h-5 w-5" />
-                    </div>
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+                        <FolderKanban className="h-5 w-5" />
+                      </div>
 
-                    <div>
-                      <h3 className="text-lg font-semibold tracking-tight text-slate-900">
-                        {selectedProject.name}
-                      </h3>
+                      <div>
+                        <h3 className="text-lg font-semibold tracking-tight text-slate-900">
+                          {selectedProject.name}
+                        </h3>
 
-                      <div className="mt-1 text-xs text-slate-500">
-                        Project workspace overview
+                        <div className="mt-1 text-xs text-slate-500">
+                          Project workspace overview
+                        </div>
                       </div>
                     </div>
+
+                    <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+                      {selectedProject.description || "No description added."}
+                    </p>
                   </div>
 
-                  <p className="mt-3 text-sm leading-6 text-slate-600">
-                    {selectedProject.description || "No description added."}
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsProjectEditOpen((prev) => !prev)}
+                    className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                  >
+                    {isProjectEditOpen
+                      ? "Close Edit"
+                      : "Edit Project Details"}
+                  </button>
                 </div>
 
-                <div className="grid gap-2 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">
+                {isProjectEditOpen ? (
+                  <ProjectEditForm
+                    form={projectEditForm}
+                    onChange={setProjectEditForm}
+                    onSubmit={handleProjectDetailsSave}
+                    onCancel={() => {
+                      setProjectEditForm({
+                        name: selectedProject.name || "",
+                        owner: selectedProject.owner || "",
+                        status: selectedProject.status || "Active",
+                        startDate: selectedProject.startDate || "",
+                        targetEndDate: selectedProject.targetEndDate || "",
+                        description: selectedProject.description || "",
+                      });
+                      setIsProjectEditOpen(false);
+                    }}
+                    isSaving={projectEditSaving}
+                  />
+                ) : null}
+
+                <div className="grid gap-2 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600 md:grid-cols-2 xl:grid-cols-4">
                   <div className="inline-flex items-center gap-2">
                     <CircleUserRound className="h-4 w-4" />
-                    <span className="font-medium text-slate-800">Owner:</span>{" "}
+                    <span className="font-medium text-slate-800">Owner:</span>
                     {selectedProject.owner || "Not assigned"}
                   </div>
 
                   <div className="inline-flex items-center gap-2">
                     <CalendarDays className="h-4 w-4" />
-                    <span className="font-medium text-slate-800">Start:</span>{" "}
+                    <span className="font-medium text-slate-800">Start:</span>
                     {selectedProject.startDate || "-"}
                   </div>
 
@@ -951,20 +1270,21 @@ export default function PlannerPage() {
                     <CalendarDays className="h-4 w-4" />
                     <span className="font-medium text-slate-800">
                       Target End:
-                    </span>{" "}
+                    </span>
                     {selectedProject.targetEndDate || "-"}
                   </div>
 
                   <div className="inline-flex items-center gap-2">
                     <KanbanSquare className="h-4 w-4" />
-                    <span className="font-medium text-slate-800">Status:</span>{" "}
+                    <span className="font-medium text-slate-800">Status:</span>
                     {selectedProject.status || "Active"}
                   </div>
                 </div>
               </div>
             ) : (
               <div className="text-sm text-slate-600">
-                Select a project to see its project-level overview here.
+                Select a project to see and edit its project-level overview
+                here.
               </div>
             )}
           </section>

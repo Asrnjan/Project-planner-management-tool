@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarDays, CircleUserRound, FileText, Flag } from "lucide-react";
 
-const initialState = {
+const emptyState = {
   name: "",
   owner: "",
   description: "",
@@ -21,8 +21,28 @@ function FieldLabel({ children, required = false, icon: Icon }) {
   );
 }
 
-export default function ProjectForm({ onSubmit }) {
-  const [form, setForm] = useState(initialState);
+export default function ProjectForm({
+  initialValue = null,
+  onSubmit,
+  onCancel,
+  submitLabel = "Create Project",
+}) {
+  const [form, setForm] = useState(emptyState);
+
+  useEffect(() => {
+    if (initialValue) {
+      setForm({
+        name: initialValue.name || "",
+        owner: initialValue.owner || "",
+        description: initialValue.description || "",
+        status: initialValue.status || "Active",
+        startDate: initialValue.startDate || "",
+        targetEndDate: initialValue.targetEndDate || "",
+      });
+    } else {
+      setForm(emptyState);
+    }
+  }, [initialValue]);
 
   function handleChange(e) {
     const { name, value } = e.target;
@@ -37,48 +57,62 @@ export default function ProjectForm({ onSubmit }) {
       return;
     }
 
-    onSubmit(form);
-    setForm(initialState);
+    onSubmit({
+      ...initialValue,
+      ...form,
+      name: form.name.trim(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    if (!initialValue) {
+      setForm(emptyState);
+    }
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid gap-4">
         <div>
-          <FieldLabel required icon={FileText}>Project Name</FieldLabel>
+          <FieldLabel required icon={FileText}>
+            Project Name
+          </FieldLabel>
+
           <input
             name="name"
             value={form.name}
             onChange={handleChange}
-            placeholder="Website Revamp"
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-slate-400"
+            placeholder="Enter project name"
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
           />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <FieldLabel icon={CircleUserRound}>Owner</FieldLabel>
+
             <input
               name="owner"
               value={form.owner}
               onChange={handleChange}
-              placeholder="Ashish"
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-slate-400"
+              placeholder="Project owner"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
             />
           </div>
 
           <div>
             <FieldLabel icon={Flag}>Status</FieldLabel>
+
             <select
               name="status"
               value={form.status}
               onChange={handleChange}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-400"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-400 focus:outline-none"
             >
-              <option>Active</option>
-              <option>Planned</option>
-              <option>On Hold</option>
-              <option>Completed</option>
+              <option value="Active">Active</option>
+              <option value="Planned">Planned</option>
+              <option value="On Hold">On Hold</option>
+              <option value="Completed">Completed</option>
+              <option value="Archived">Archived</option>
             </select>
           </div>
         </div>
@@ -86,45 +120,58 @@ export default function ProjectForm({ onSubmit }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <FieldLabel icon={CalendarDays}>Start Date</FieldLabel>
+
             <input
               name="startDate"
               type="date"
               value={form.startDate}
               onChange={handleChange}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-400"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-400 focus:outline-none"
             />
           </div>
 
           <div>
             <FieldLabel icon={CalendarDays}>Target End</FieldLabel>
+
             <input
               name="targetEndDate"
               type="date"
               value={form.targetEndDate}
               onChange={handleChange}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-400"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-400 focus:outline-none"
             />
           </div>
         </div>
 
         <div>
           <FieldLabel icon={FileText}>Description</FieldLabel>
+
           <textarea
             name="description"
             value={form.description}
             onChange={handleChange}
-            placeholder="Short description"
-            className="min-h-[110px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-slate-400"
+            placeholder="Short project description"
+            className="min-h-[110px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
           />
         </div>
       </div>
 
-      <div className="flex justify-end pt-1">
+      <div className="flex flex-wrap justify-end gap-2 pt-1">
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+        ) : null}
+
         <button
           type="submit"
           className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
         >
-          Create Project
+          {submitLabel}
         </button>
       </div>
     </form>

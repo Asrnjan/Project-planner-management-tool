@@ -80,7 +80,8 @@ function statusClass(status) {
   return "bg-blue-100 text-blue-700";
 }
 
-function ProjectDashboardCard({ project, tasks, onDelete }) {
+function ProjectDashboardCard({ project, tasks, onDelete, onUpdate }) {
+  const [editing, setEditing] = useState(false);
   const taskSummary = getProjectTaskSummary(project, tasks);
 
   function handleDelete() {
@@ -91,6 +92,34 @@ function ProjectDashboardCard({ project, tasks, onDelete }) {
     if (confirmed) {
       onDelete(project.id);
     }
+  }
+
+  function handleUpdate(updatedProject) {
+    onUpdate(project.id, updatedProject);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className="rounded-3xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+        <div className="mb-4">
+          <h3 className="text-base font-semibold tracking-tight text-slate-900">
+            Edit Project
+          </h3>
+
+          <p className="mt-1 text-xs text-slate-600">
+            Update project name, owner, status, dates, and description.
+          </p>
+        </div>
+
+        <ProjectForm
+          initialValue={project}
+          onSubmit={handleUpdate}
+          onCancel={() => setEditing(false)}
+          submitLabel="Save Changes"
+        />
+      </div>
+    );
   }
 
   return (
@@ -183,6 +212,14 @@ function ProjectDashboardCard({ project, tasks, onDelete }) {
           Open Workspace
         </Link>
 
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+        >
+          Edit
+        </button>
+
         <Link
           to={`/planner?projectId=${project.id}&tab=schedule`}
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
@@ -210,7 +247,8 @@ function ProjectDashboardCard({ project, tasks, onDelete }) {
 }
 
 export default function PortfolioPage() {
-  const { projects, tasks, addProject, deleteProject } = usePlannerStore();
+  const { projects, tasks, addProject, updateProject, deleteProject } =
+  usePlannerStore();
 
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -416,6 +454,7 @@ export default function PortfolioPage() {
             key={project.id}
             project={project}
             tasks={tasks}
+            onUpdate={updateProject}
             onDelete={deleteProject}
           />
         ))}
