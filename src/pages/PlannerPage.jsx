@@ -1,15 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   CalendarDays,
+  CheckCircle2,
   CircleUserRound,
-  Cloud,
   FileText,
   FolderKanban,
   KanbanSquare,
   ListTodo,
   Milestone,
-  Save,
 } from "lucide-react";
 
 import { usePlannerStore } from "../store/usePlannerStore";
@@ -45,12 +44,6 @@ import {
   recalculateMsProjectSchedule,
 } from "../utils/planner";
 
-import {
-  saveProject,
-  loadProjects,
-  deleteProject,
-} from "../services/projectService";
-
 const TABS = [
   { key: "overview", label: "Overview" },
   { key: "schedule", label: "Schedule" },
@@ -71,16 +64,8 @@ const emptyProjectEditForm = {
   description: "",
 };
 
-function formatCloudDate(value) {
-  if (!value) return "Not saved yet";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Not saved yet";
-  }
-
-  return date.toLocaleString();
+function getFormattedNow() {
+  return new Date().toLocaleString();
 }
 
 function MetricCard({ label, value, subtitle }) {
@@ -116,6 +101,33 @@ function CompactStat({ label, value, icon: Icon }) {
   );
 }
 
+function SaveStatusCard({ lastUpdatedAt }) {
+  return (
+    <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+          <CheckCircle2 className="h-5 w-5" />
+        </div>
+
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-emerald-900">
+            All changes are saved automatically
+          </div>
+
+          <div className="mt-1 text-xs leading-5 text-emerald-700">
+            Project, task, sprint, report, and document changes are saved in the
+            background.
+          </div>
+
+          <div className="mt-2 text-[11px] font-medium text-emerald-700">
+            Last activity: {lastUpdatedAt}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EmptyProjectNotice() {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -145,6 +157,7 @@ function ProjectEditForm({
 }) {
   function handleChange(event) {
     const { name, value } = event.target;
+
     onChange((prev) => ({
       ...prev,
       [name]: value,
@@ -333,37 +346,24 @@ export default function PlannerPage() {
     useState("");
   const [focusedTaskId, setFocusedTaskId] = useState("");
 
-  const [cloudProjects, setCloudProjects] = useState([]);
-  const [cloudLoading, setCloudLoading] = useState(false);
-  const [cloudMessage, setCloudMessage] = useState("");
-  const [cloudError, setCloudError] = useState("");
-  const [activeCloudProjectId, setActiveCloudProjectId] = useState("");
-  const [lastSavedAt, setLastSavedAt] = useState("");
-
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [lastAutoSavedAt, setLastAutoSavedAt] = useState("");
-  const [showCloudBackups, setShowCloudBackups] = useState(false);
-
   const [isProjectEditOpen, setIsProjectEditOpen] = useState(false);
   const [projectEditForm, setProjectEditForm] = useState(emptyProjectEditForm);
   const [projectEditSaving, setProjectEditSaving] = useState(false);
 
-  const autoSaveTimerRef = useRef(null);
-  const lastSavedSnapshotRef = useRef("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [statusError, setStatusError] = useState("");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(getFormattedNow());
 
   useEffect(() => {
-    fetchCloudProjects();
-
     loadCloudReportsAndDocuments()
       .then((result) => {
         console.log("Loaded reports/documents from Supabase:", result);
       })
       .catch((error) => {
         console.error("Failed to load reports/documents from Supabase:", error);
-        setCloudError(error.message);
+        setStatusError(error.message);
       });
-  }, []);
+  }, [loadCloudReportsAndDocuments]);
 
   useEffect(() => {
     setSelectedProjectId(projectIdFromUrl);
@@ -444,6 +444,10 @@ export default function PlannerPage() {
     });
   }, [selectedProject?.id]);
 
+  useEffect(() => {
+    setLastUpdatedAt(getFormattedNow());
+  }, [projects, tasks, sprints, weeklyReports, projectDocuments]);
+
   const summary = summarizeProject(filteredTasks);
 
   const conflicts = useMemo(
@@ -522,107 +526,6 @@ export default function PlannerPage() {
     ]
   );
 
-  const cloudSnapshot = useMemo(
-    () =>
-      JSON.stringify({
-        projects,
-        tasks,
-        plannerSettings,
-        baselineSnapshots,
-        sprints,
-        weeklyReports,
-        projectDocuments,
-      }),
-    [
-      projects,
-      tasks,
-      plannerSettings,
-      baselineSnapshots,
-      sprints,
-      weeklyReports,
-      projectDocuments,
-    ]
-  );
-
-  useEffect(() => {
-    if (!lastSavedSnapshotRef.current) {
-      lastSavedSnapshotRef.current = cloudSnapshot;
-      return;
-    }
-
-    if (cloudSnapshot !== lastSavedSnapshotRef.current) {
-      setHasUnsavedChanges(true);
-    }
-  }, [cloudSnapshot]);
-
-  useEffect(() => {
-    if (!autoSaveEnabled) {
-      if (autoSaveTimerRef.current) {
-        clearInterval(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-
-      return;
-    }
-
-    autoSaveTimerRef.current = setInterval(() => {
-      if (!activeCloudProjectId) {
-        setCloudError(
-          "Auto Save needs an active cloud save. Please click Create Cloud Save once first."
-        );
-        return;
-      }
-
-      if (!hasUnsavedChanges) {
-        return;
-      }
-
-      handleAutoSaveCloudProject();
-    }, 60000);
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearInterval(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-    };
-  }, [autoSaveEnabled, activeCloudProjectId, hasUnsavedChanges, cloudSnapshot]);
-
-  function getFreshPlannerData() {
-    const fresh = usePlannerStore.getState();
-
-    return {
-      projects: Array.isArray(fresh.projects) ? fresh.projects : [],
-      tasks: Array.isArray(fresh.tasks) ? fresh.tasks : [],
-      sprints: Array.isArray(fresh.sprints) ? fresh.sprints : [],
-      plannerSettings:
-        fresh.plannerSettings && typeof fresh.plannerSettings === "object"
-          ? fresh.plannerSettings
-          : { schedulingMode: "manual" },
-      baselineSnapshots: Array.isArray(fresh.baselineSnapshots)
-        ? fresh.baselineSnapshots
-        : [],
-      weeklyReports: Array.isArray(fresh.weeklyReports)
-        ? fresh.weeklyReports
-        : [],
-      projectDocuments: Array.isArray(fresh.projectDocuments)
-        ? fresh.projectDocuments
-        : [],
-    };
-  }
-
-  function makeSnapshotFromFreshData(freshData) {
-    return JSON.stringify({
-      projects: freshData.projects,
-      tasks: freshData.tasks,
-      plannerSettings: freshData.plannerSettings,
-      baselineSnapshots: freshData.baselineSnapshots,
-      sprints: freshData.sprints,
-      weeklyReports: freshData.weeklyReports,
-      projectDocuments: freshData.projectDocuments,
-    });
-  }
-
   function mergeBackIntoAllTasks(updatedFilteredTasks) {
     if (!selectedProjectId) {
       bulkReplaceTasks(updatedFilteredTasks);
@@ -650,14 +553,20 @@ export default function PlannerPage() {
     );
 
     mergeBackIntoAllTasks(recalculatedFiltered);
+    setStatusMessage("Schedule recalculated and saved automatically.");
+    setStatusError("");
   }
 
   function handleGridBulkUpdate(updatedFilteredTasks) {
     mergeBackIntoAllTasks(updatedFilteredTasks);
+    setStatusMessage("Schedule changes saved automatically.");
+    setStatusError("");
   }
 
   function handleChangeMode(mode) {
     setSchedulingMode(mode);
+    setStatusMessage("Scheduling mode updated and saved automatically.");
+    setStatusError("");
   }
 
   function handleSelectConflictTask(taskId) {
@@ -667,19 +576,19 @@ export default function PlannerPage() {
 
   async function handleProjectDetailsSave() {
     if (!selectedProject) {
-      setCloudError("Please select a project before editing project details.");
+      setStatusError("Please select a project before editing project details.");
       return;
     }
 
     if (!projectEditForm.name.trim()) {
-      setCloudError("Project name cannot be empty.");
+      setStatusError("Project name cannot be empty.");
       return;
     }
 
     try {
       setProjectEditSaving(true);
-      setCloudMessage("");
-      setCloudError("");
+      setStatusMessage("");
+      setStatusError("");
 
       const updatedProject = {
         ...selectedProject,
@@ -694,248 +603,20 @@ export default function PlannerPage() {
 
       updateProject(selectedProject.id, updatedProject);
 
-      setHasUnsavedChanges(true);
+      setLastUpdatedAt(getFormattedNow());
       setIsProjectEditOpen(false);
-      setCloudMessage(
-        "Project details updated. Use Save Now to sync immediately."
-      );
+      setStatusMessage("Project details updated and saved automatically.");
     } catch (error) {
-      setCloudError(error.message || "Failed to update project details.");
+      setStatusError(error.message || "Failed to update project details.");
     } finally {
       setProjectEditSaving(false);
-    }
-  }
-
-  async function fetchCloudProjects() {
-    try {
-      setCloudLoading(true);
-      setCloudMessage("");
-      setCloudError("");
-
-      const data = await loadProjects();
-      setCloudProjects(data || []);
-    } catch (error) {
-      setCloudError(error.message);
-    } finally {
-      setCloudLoading(false);
-    }
-  }
-
-  async function handleSaveCloudProject() {
-    try {
-      setCloudLoading(true);
-      setCloudMessage("");
-      setCloudError("");
-
-      const freshData = getFreshPlannerData();
-
-      const projectName = selectedProject
-        ? selectedProject.name
-        : "Planner Workspace";
-
-      const projectDescription = selectedProject
-        ? selectedProject.description || ""
-        : "All projects planner workspace";
-
-      const savedAt = new Date().toISOString();
-
-      const payload = {
-        id: activeCloudProjectId || undefined,
-        name: projectName,
-        description: projectDescription,
-
-        projects: freshData.projects,
-        tasks: freshData.tasks,
-        plannerSettings: freshData.plannerSettings,
-        baselineSnapshots: freshData.baselineSnapshots,
-        sprints: freshData.sprints,
-        weeklyReports: freshData.weeklyReports,
-        projectDocuments: freshData.projectDocuments,
-
-        savedAt,
-        saveType: selectedProject ? "single_project_view" : "full_workspace",
-        selectedProjectId: selectedProjectId || "",
-      };
-
-      console.log("Saving to Supabase payload:", payload);
-      console.log("Weekly Reports Count:", payload.weeklyReports.length);
-      console.log("Project Documents Count:", payload.projectDocuments.length);
-
-      const saved = await saveProject(payload);
-
-      setActiveCloudProjectId(saved.id);
-      setLastSavedAt(savedAt);
-      setHasUnsavedChanges(false);
-      lastSavedSnapshotRef.current = makeSnapshotFromFreshData(freshData);
-
-      await fetchCloudProjects();
-
-      setCloudMessage("Planner data saved successfully.");
-    } catch (error) {
-      setCloudError(error.message);
-    } finally {
-      setCloudLoading(false);
-    }
-  }
-
-  async function handleAutoSaveCloudProject() {
-    try {
-      if (!activeCloudProjectId) {
-        setCloudError(
-          "Auto Save needs an active cloud save. Please click Create Cloud Save once first."
-        );
-        return;
-      }
-
-      if (!hasUnsavedChanges) {
-        return;
-      }
-
-      setCloudError("");
-
-      const freshData = getFreshPlannerData();
-
-      const projectName = selectedProject
-        ? selectedProject.name
-        : "Planner Workspace";
-
-      const projectDescription = selectedProject
-        ? selectedProject.description || ""
-        : "All projects planner workspace";
-
-      const savedAt = new Date().toISOString();
-
-      const payload = {
-        id: activeCloudProjectId,
-        name: projectName,
-        description: projectDescription,
-
-        projects: freshData.projects,
-        tasks: freshData.tasks,
-        plannerSettings: freshData.plannerSettings,
-        baselineSnapshots: freshData.baselineSnapshots,
-        sprints: freshData.sprints,
-        weeklyReports: freshData.weeklyReports,
-        projectDocuments: freshData.projectDocuments,
-
-        savedAt,
-        saveType: selectedProject ? "single_project_view" : "full_workspace",
-        selectedProjectId: selectedProjectId || "",
-        autoSaved: true,
-      };
-
-      console.log("Auto saving to Supabase payload:", payload);
-      console.log("Weekly Reports Count:", payload.weeklyReports.length);
-      console.log("Project Documents Count:", payload.projectDocuments.length);
-
-      const saved = await saveProject(payload);
-
-      setActiveCloudProjectId(saved.id);
-      setLastSavedAt(savedAt);
-      setLastAutoSavedAt(savedAt);
-      setHasUnsavedChanges(false);
-      lastSavedSnapshotRef.current = makeSnapshotFromFreshData(freshData);
-
-      await fetchCloudProjects();
-
-      setCloudMessage("Auto-saved successfully.");
-    } catch (error) {
-      setCloudError(error.message);
-    }
-  }
-
-  async function handleOpenCloudProject(project) {
-    const confirmed = window.confirm(
-      "Loading this cloud backup will replace your current local planner data. Do you want to continue?"
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setCloudLoading(true);
-      setCloudMessage("");
-      setCloudError("");
-
-      if (!project.project_data) {
-        throw new Error("This saved project does not contain project_data.");
-      }
-
-      const restoredData = {
-        projects: project.project_data.projects || [],
-        tasks: project.project_data.tasks || [],
-        plannerSettings: project.project_data.plannerSettings || {},
-        baselineSnapshots: project.project_data.baselineSnapshots || [],
-        sprints: project.project_data.sprints || [],
-        weeklyReports: project.project_data.weeklyReports || [],
-        projectDocuments: project.project_data.projectDocuments || [],
-      };
-
-      importPlannerData(restoredData);
-
-      await loadCloudReportsAndDocuments();
-
-      setActiveCloudProjectId(project.id);
-
-      const loadedSavedAt =
-        project.project_data.savedAt ||
-        project.updated_at ||
-        project.created_at ||
-        "";
-
-      setLastSavedAt(loadedSavedAt);
-      setLastAutoSavedAt("");
-      setHasUnsavedChanges(false);
-
-      lastSavedSnapshotRef.current = JSON.stringify(restoredData);
-
-      if (project.project_data.selectedProjectId) {
-        setSelectedProjectId(project.project_data.selectedProjectId);
-      }
-
-      setCloudMessage("Planner backup loaded successfully.");
-    } catch (error) {
-      setCloudError(error.message);
-    } finally {
-      setCloudLoading(false);
-    }
-  }
-
-  async function handleDeleteCloudProject(projectId) {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this cloud backup? This cannot be undone."
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setCloudLoading(true);
-      setCloudMessage("");
-      setCloudError("");
-
-      await deleteProject(projectId);
-
-      if (activeCloudProjectId === projectId) {
-        setActiveCloudProjectId("");
-        setLastSavedAt("");
-        setLastAutoSavedAt("");
-        setHasUnsavedChanges(false);
-        setAutoSaveEnabled(false);
-      }
-
-      await fetchCloudProjects();
-
-      setCloudMessage("Cloud backup deleted successfully.");
-    } catch (error) {
-      setCloudError(error.message);
-    } finally {
-      setCloudLoading(false);
     }
   }
 
   return (
     <div className="space-y-3">
       <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+        <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
               <FolderKanban className="h-3.5 w-3.5" />
@@ -949,7 +630,7 @@ export default function PlannerPage() {
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
               {selectedProject
                 ? "Single workspace for project overview, schedule, execution, sprints, milestones, dependencies, documents, and reports."
-                : "Manage schedule, execution, milestones, dependencies, documents, reports, data exchange, and cloud sync across all projects."}
+                : "Manage schedule, execution, milestones, dependencies, documents, reports, and data exchange across all projects."}
             </p>
 
             <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
@@ -991,178 +672,21 @@ export default function PlannerPage() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700">
-                <Cloud className="h-3.5 w-3.5" />
-                Cloud Sync
-              </div>
-
-              <span
-                className={
-                  hasUnsavedChanges
-                    ? "rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800"
-                    : "rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold text-emerald-800"
-                }
-              >
-                {hasUnsavedChanges ? "Unsaved" : "Saved"}
-              </span>
-            </div>
-
-            <div className="mt-3 grid gap-2 text-xs text-slate-600">
-              <div className="flex items-center justify-between gap-3">
-                <span>Auto Save</span>
-                <span className="font-semibold text-slate-900">
-                  {autoSaveEnabled ? "ON" : "OFF"}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <span>Last Saved</span>
-                <span className="max-w-[180px] truncate font-semibold text-slate-900">
-                  {formatCloudDate(lastSavedAt)}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <span>Last Auto Save</span>
-                <span className="max-w-[180px] truncate font-semibold text-slate-900">
-                  {formatCloudDate(lastAutoSavedAt)}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleSaveCloudProject}
-                disabled={cloudLoading}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Save className="h-3.5 w-3.5" />
-                {cloudLoading
-                  ? "Saving..."
-                  : activeCloudProjectId
-                  ? "Save Now"
-                  : "Create Save"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (!activeCloudProjectId && !autoSaveEnabled) {
-                    setCloudError(
-                      "Please click Create Save once before enabling Auto Save."
-                    );
-                    return;
-                  }
-
-                  setAutoSaveEnabled((prev) => !prev);
-                  setCloudMessage(
-                    autoSaveEnabled
-                      ? "Auto Save turned off."
-                      : "Auto Save turned on. Changes will save every 60 seconds."
-                  );
-                  setCloudError("");
-                }}
-                className={
-                  autoSaveEnabled
-                    ? "rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
-                    : "rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-                }
-              >
-                {autoSaveEnabled ? "Auto Save ON" : "Auto Save OFF"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowCloudBackups((prev) => !prev)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-              >
-                {showCloudBackups ? "Hide Backups" : "Backups"}
-              </button>
-            </div>
-          </div>
+          <SaveStatusCard lastUpdatedAt={lastUpdatedAt} />
         </div>
 
-        {cloudMessage ? (
+        {statusMessage ? (
           <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
-            {cloudMessage}
+            {statusMessage}
           </div>
         ) : null}
 
-        {cloudError ? (
+        {statusError ? (
           <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-            {cloudError}
+            {statusError}
           </div>
         ) : null}
       </section>
-
-      {showCloudBackups ? (
-        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-base font-semibold tracking-tight text-slate-900">
-                Cloud Backups
-              </h3>
-              <p className="mt-1 text-xs text-slate-500">
-                Open or delete previously saved planner backups.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={fetchCloudProjects}
-              disabled={cloudLoading}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Refresh
-            </button>
-          </div>
-
-          <div className="mt-4 grid gap-2">
-            {cloudProjects.length === 0 ? (
-              <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-500">
-                No cloud backups found.
-              </div>
-            ) : (
-              cloudProjects.map((project) => (
-                <div
-                  key={project.id}
-                  className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {project.name || "Untitled Backup"}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Updated: {formatCloudDate(project.updated_at)}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenCloudProject(project)}
-                      className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
-                    >
-                      Open
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCloudProject(project.id)}
-                      className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-      ) : null}
 
       <section className="grid gap-3 xl:grid-cols-[1fr_1.2fr]">
         <PlannerProjectFilter

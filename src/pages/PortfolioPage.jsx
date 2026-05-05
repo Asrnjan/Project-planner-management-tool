@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   BriefcaseBusiness,
   CalendarDays,
@@ -21,23 +21,23 @@ import { usePlannerStore } from "../store/usePlannerStore";
 
 function PortfolioStatCard({ title, value, icon: Icon, subtitle }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex items-center justify-between">
         <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
           {title}
         </div>
 
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
           <Icon className="h-4 w-4" />
         </div>
       </div>
 
-      <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+      <div className="mt-2 text-xl font-semibold tracking-tight text-slate-900">
         {value}
       </div>
 
       {subtitle ? (
-        <div className="mt-1 text-[11px] text-slate-500">{subtitle}</div>
+        <div className="mt-0.5 text-[11px] text-slate-500">{subtitle}</div>
       ) : null}
     </div>
   );
@@ -77,6 +77,9 @@ function getProjectTaskSummary(project, tasks) {
 function statusClass(status) {
   if (status === "Completed") return "bg-emerald-100 text-emerald-700";
   if (status === "On Hold") return "bg-amber-100 text-amber-700";
+  if (status === "At Risk") return "bg-red-100 text-red-700";
+  if (status === "Delayed") return "bg-red-100 text-red-700";
+  if (status === "Planned") return "bg-slate-100 text-slate-700";
   return "bg-blue-100 text-blue-700";
 }
 
@@ -224,7 +227,7 @@ function ProjectDashboardCard({ project, tasks, onDelete, onUpdate }) {
           to={`/planner?projectId=${project.id}&tab=schedule`}
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
         >
-          Open Schedule
+          Schedule
         </Link>
 
         <Link
@@ -247,8 +250,10 @@ function ProjectDashboardCard({ project, tasks, onDelete, onUpdate }) {
 }
 
 export default function PortfolioPage() {
+  const navigate = useNavigate();
+
   const { projects, tasks, addProject, updateProject, deleteProject } =
-  usePlannerStore();
+    usePlannerStore();
 
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -314,45 +319,64 @@ export default function PortfolioPage() {
     return result;
   }, [projects, searchText, statusFilter, sortBy]);
 
+  function handleOpenPlanner() {
+    navigate("/planner?tab=schedule");
+  }
+
+  function handleCreateProjectClick() {
+    const target = document.getElementById("create-project");
+
+    if (target) {
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  }
+
   return (
-    <div className="space-y-4">
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-              <BriefcaseBusiness className="h-3.5 w-3.5" />
-              Portfolio Dashboard
+    <div className="space-y-3">
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <BriefcaseBusiness className="h-4 w-4" />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+                  Project Portfolio
+                </h2>
+
+                <div className="mt-0.5 text-xs text-slate-500">
+                  {totalProjects} projects • {totalTasks} tasks •{" "}
+                  {overallCompletion}% completion
+                </div>
+              </div>
             </div>
-
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
-              Project Portfolio
-            </h2>
-
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-              Manage project workspaces, track progress, and open schedule,
-              sprint, timeline, reporting, documentation, and centralized PPT
-              views from one place.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <CentralizedManagerReportButton />
 
-            <Link
-              to="/planner"
-              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            <button
+              type="button"
+              onClick={handleOpenPlanner}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
             >
               <ClipboardPenLine className="h-4 w-4" />
               Open Planner
-            </Link>
+            </button>
 
-            <a
-              href="#create-project"
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            <button
+              type="button"
+              onClick={handleCreateProjectClick}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
               <Plus className="h-4 w-4" />
               New Project
-            </a>
+            </button>
           </div>
         </div>
       </section>
@@ -410,9 +434,14 @@ export default function PortfolioPage() {
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-8 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
               >
                 <option value="All">All Status</option>
+                <option value="Planned">Planned</option>
                 <option value="Active">Active</option>
+                <option value="On Track">On Track</option>
+                <option value="At Risk">At Risk</option>
+                <option value="Delayed">Delayed</option>
                 <option value="On Hold">On Hold</option>
                 <option value="Completed">Completed</option>
+                <option value="Archived">Archived</option>
               </select>
             </div>
 
