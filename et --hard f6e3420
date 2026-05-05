@@ -1,0 +1,14 @@
+[33m7e6c417[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m new lag fix
+[33m122ae8c[m added lag in scheduler table
+[33md4d52fb[m Optimize planner page lazy loading
+[33m280b673[m Compact UI for centralised ppt section
+[33mef59237[m Fix project add delete sync issue
+[33m342cb7e[m ui enhancements
+[33mf6e3420[m removed the continue button
+[33m705f842[m Fix user-specific workspace and admin centralized PPT
+[33m662f89e[m Add centralized manager PPT report
+[33m3f9fc6e[m Prepare planner app for Netlify deployment
+[33m6504d98[m Replace missing CollapsibleCard with AppCollapsibleCard
+[33mbf20c14[m Trigger Netlify rebuild
+[33m39278ef[m Initial commit
+[33mf5cfac8[m Recovered working planner app
