@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   CalendarDays,
@@ -13,23 +13,10 @@ import {
 
 import { usePlannerStore } from "../store/usePlannerStore";
 
-import PlannerScheduleTable from "../components/planner/PlannerScheduleTable";
-import PlannerBoardView from "../components/planner/PlannerBoardView";
-import PlannerTimelineView from "../components/gantt/TimelineView";
 import PlannerTabs from "../components/planner/PlannerTabs";
-import PlannerResourcesView from "../components/planner/PlannerResourcesView";
-import PlannerReportsView from "../components/planner/PlannerReportsView";
-import PlannerScheduleAssistPanel from "../components/planner/PlannerScheduleAssistPanel";
 import PlannerProjectFilter from "../components/planner/PlannerProjectFilter";
-import PlannerDependencyGraphStarter from "../components/planner/PlannerDependencyGraphStarter";
-import PlannerRelationshipPanel from "../components/planner/PlannerRelationshipPanel";
 import PlannerRiskSummary from "../components/planner/PlannerRiskSummary";
-import PlannerBaselinePanel from "../components/planner/PlannerBaselinePanel";
-import PlannerDependencyGraphVisual from "../components/planner/PlannerDependencyGraphVisual";
 import PlannerUnifiedDataTools from "../components/planner/PlannerUnifiedDataTools";
-
-import WeeklyCeoReportView from "../components/reports/WeeklyCeoReportView";
-import ProjectDocumentsView from "../components/documents/ProjectDocumentsView";
 
 import CollapsibleCard from "../components/common/AppCollapsibleCard";
 import SprintForm from "../components/sprints/SprintForm";
@@ -43,6 +30,54 @@ import {
   getProjectRiskSummary,
   recalculateMsProjectSchedule,
 } from "../utils/planner";
+
+const PlannerScheduleTable = lazy(() =>
+  import("../components/planner/PlannerScheduleTable")
+);
+
+const PlannerScheduleAssistPanel = lazy(() =>
+  import("../components/planner/PlannerScheduleAssistPanel")
+);
+
+const PlannerBoardView = lazy(() =>
+  import("../components/planner/PlannerBoardView")
+);
+
+const PlannerTimelineView = lazy(() =>
+  import("../components/gantt/TimelineView")
+);
+
+const PlannerResourcesView = lazy(() =>
+  import("../components/planner/PlannerResourcesView")
+);
+
+const PlannerRelationshipPanel = lazy(() =>
+  import("../components/planner/PlannerRelationshipPanel")
+);
+
+const ProjectDocumentsView = lazy(() =>
+  import("../components/documents/ProjectDocumentsView")
+);
+
+const WeeklyCeoReportView = lazy(() =>
+  import("../components/reports/WeeklyCeoReportView")
+);
+
+const PlannerReportsView = lazy(() =>
+  import("../components/planner/PlannerReportsView")
+);
+
+const PlannerBaselinePanel = lazy(() =>
+  import("../components/planner/PlannerBaselinePanel")
+);
+
+const PlannerDependencyGraphStarter = lazy(() =>
+  import("../components/planner/PlannerDependencyGraphStarter")
+);
+
+const PlannerDependencyGraphVisual = lazy(() =>
+  import("../components/planner/PlannerDependencyGraphVisual")
+);
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -66,6 +101,14 @@ const emptyProjectEditForm = {
 
 function getFormattedNow() {
   return new Date().toLocaleString();
+}
+
+function TabLoadingBox({ label = "Loading section..." }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm font-medium text-slate-500 shadow-sm">
+      {label}
+    </div>
+  );
 }
 
 function MetricCard({ label, value, subtitle }) {
@@ -103,23 +146,18 @@ function CompactStat({ label, value, icon: Icon }) {
 
 function SaveStatusCard({ lastUpdatedAt }) {
   return (
-    <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
-          <CheckCircle2 className="h-5 w-5" />
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 shadow-sm">
+      <div className="flex items-center gap-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+          <CheckCircle2 className="h-4 w-4" />
         </div>
 
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-emerald-900">
-            All changes are saved automatically
+          <div className="text-xs font-semibold text-emerald-900">
+            Auto saved
           </div>
 
-          <div className="mt-1 text-xs leading-5 text-emerald-700">
-            Project, task, sprint, report, and document changes are saved in the
-            background.
-          </div>
-
-          <div className="mt-2 text-[11px] font-medium text-emerald-700">
+          <div className="mt-0.5 truncate text-[11px] text-emerald-700">
             Last activity: {lastUpdatedAt}
           </div>
         </div>
@@ -355,14 +393,14 @@ export default function PlannerPage() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState(getFormattedNow());
 
   useEffect(() => {
-    loadCloudReportsAndDocuments()
-      .then((result) => {
-        console.log("Loaded reports/documents from Supabase:", result);
-      })
-      .catch((error) => {
+    const timer = window.setTimeout(() => {
+      loadCloudReportsAndDocuments().catch((error) => {
         console.error("Failed to load reports/documents from Supabase:", error);
-        setStatusError(error.message);
+        setStatusError(error.message || "Failed to load reports/documents.");
       });
+    }, 800);
+
+    return () => window.clearTimeout(timer);
   }, [loadCloudReportsAndDocuments]);
 
   useEffect(() => {
@@ -424,7 +462,15 @@ export default function PlannerPage() {
 
   const selectedProject = useMemo(() => {
     if (!selectedProjectId) return null;
-    return projects.find((project) => project.id === selectedProjectId) || null;
+
+    return (
+      projects.find(
+        (project) =>
+          project.id === selectedProjectId ||
+          project.cloudId === selectedProjectId ||
+          project.dbId === selectedProjectId
+      ) || null
+    );
   }, [projects, selectedProjectId]);
 
   useEffect(() => {
@@ -448,27 +494,7 @@ export default function PlannerPage() {
     setLastUpdatedAt(getFormattedNow());
   }, [projects, tasks, sprints, weeklyReports, projectDocuments]);
 
-  const summary = summarizeProject(filteredTasks);
-
-  const conflicts = useMemo(
-    () => getDependencyConflicts(filteredTasks),
-    [filteredTasks]
-  );
-
-  const dependencyGraph = useMemo(
-    () => getDependencyGraphStarter(filteredTasks),
-    [filteredTasks]
-  );
-
-  const relationship = useMemo(
-    () => getTaskRelationships(selectedRelationshipTaskId, filteredTasks),
-    [selectedRelationshipTaskId, filteredTasks]
-  );
-
-  const riskSummary = useMemo(
-    () => getProjectRiskSummary(filteredTasks),
-    [filteredTasks]
-  );
+  const summary = useMemo(() => summarizeProject(filteredTasks), [filteredTasks]);
 
   const schedulingMode = plannerSettings?.schedulingMode || "manual";
 
@@ -504,6 +530,43 @@ export default function PlannerPage() {
       milestoneCount,
     };
   }, [filteredTasks]);
+
+  const riskSummary = useMemo(() => {
+    if (activeTab !== "overview" && activeTab !== "schedule") {
+      return {
+        overdue: [],
+        blocked: [],
+        missingDates: [],
+        missingOwners: [],
+        summaryText: "",
+      };
+    }
+
+    return getProjectRiskSummary(filteredTasks);
+  }, [activeTab, filteredTasks]);
+
+  const conflicts = useMemo(() => {
+    if (activeTab !== "schedule") return [];
+    return getDependencyConflicts(filteredTasks);
+  }, [activeTab, filteredTasks]);
+
+  const relationship = useMemo(() => {
+    if (activeTab !== "resources") return null;
+    return getTaskRelationships(selectedRelationshipTaskId, filteredTasks);
+  }, [activeTab, selectedRelationshipTaskId, filteredTasks]);
+
+  const dependencyGraph = useMemo(() => {
+    if (activeTab !== "reports") {
+      return {
+        nodes: [],
+        edges: [],
+        starters: [],
+        missingDependencies: [],
+      };
+    }
+
+    return getDependencyGraphStarter(filteredTasks);
+  }, [activeTab, filteredTasks]);
 
   const exportData = useMemo(
     () => ({
@@ -615,58 +678,22 @@ export default function PlannerPage() {
 
   return (
     <div className="space-y-3">
-      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-              <FolderKanban className="h-3.5 w-3.5" />
-              Planner Control Center
-            </div>
-
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
-              {selectedProject ? selectedProject.name : "Project Planner"}
-            </h2>
-
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-              {selectedProject
-                ? "Single workspace for project overview, schedule, execution, sprints, milestones, dependencies, documents, and reports."
-                : "Manage schedule, execution, milestones, dependencies, documents, reports, and data exchange across all projects."}
-            </p>
-
-            <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-2xl bg-slate-50 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                  View
-                </div>
-                <div className="mt-1 truncate font-semibold text-slate-900">
-                  {selectedProject ? selectedProject.name : "All Projects"}
-                </div>
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                <FolderKanban className="h-4 w-4" />
               </div>
 
-              <div className="rounded-2xl bg-slate-50 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                  Tasks
-                </div>
-                <div className="mt-1 font-semibold text-slate-900">
-                  {filteredTasks.length}
-                </div>
-              </div>
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-semibold tracking-tight text-slate-900">
+                  {selectedProject ? selectedProject.name : "Project Planner"}
+                </h2>
 
-              <div className="rounded-2xl bg-slate-50 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                  Sprints
-                </div>
-                <div className="mt-1 font-semibold text-slate-900">
-                  {filteredSprints.length}
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 px-3 py-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                  Mode
-                </div>
-                <div className="mt-1 capitalize font-semibold text-slate-900">
-                  {schedulingMode}
+                <div className="mt-0.5 text-xs text-slate-500">
+                  {filteredTasks.length} tasks • {filteredSprints.length}{" "}
+                  sprints • {schedulingMode} mode
                 </div>
               </div>
             </div>
@@ -676,13 +703,13 @@ export default function PlannerPage() {
         </div>
 
         {statusMessage ? (
-          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
             {statusMessage}
           </div>
         ) : null}
 
         {statusError ? (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
             {statusError}
           </div>
         ) : null}
@@ -714,7 +741,9 @@ export default function PlannerPage() {
         <MetricCard label="Not Started" value={counts.notStarted} />
       </section>
 
-      <PlannerRiskSummary summary={riskSummary} />
+      {(activeTab === "overview" || activeTab === "schedule") && (
+        <PlannerRiskSummary summary={riskSummary} />
+      )}
 
       <PlannerTabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
 
@@ -848,35 +877,41 @@ export default function PlannerPage() {
       )}
 
       {activeTab === "schedule" && (
-        <div className="space-y-3">
-          <PlannerScheduleAssistPanel
-            tasks={filteredTasks}
-            conflicts={conflicts}
-            schedulingMode={schedulingMode}
-            onChangeMode={handleChangeMode}
-            onRecalculate={handleRecalculateSchedule}
-            onSelectConflictTask={handleSelectConflictTask}
-          />
+        <Suspense fallback={<TabLoadingBox label="Loading schedule..." />}>
+          <div className="space-y-3">
+            <PlannerScheduleAssistPanel
+              tasks={filteredTasks}
+              conflicts={conflicts}
+              schedulingMode={schedulingMode}
+              onChangeMode={handleChangeMode}
+              onRecalculate={handleRecalculateSchedule}
+              onSelectConflictTask={handleSelectConflictTask}
+            />
 
-          <PlannerScheduleTable
-            tasks={filteredTasks}
-            sprints={filteredSprints}
-            onAddTask={addTask}
-            onDeleteTask={deleteTask}
-            onBulkUpdate={handleGridBulkUpdate}
-            selectedProjectId={selectedProjectId}
-            focusedTaskId={focusedTaskId}
-            onRecalculate={handleRecalculateSchedule}
-          />
-        </div>
+            <PlannerScheduleTable
+              tasks={filteredTasks}
+              sprints={filteredSprints}
+              onAddTask={addTask}
+              onDeleteTask={deleteTask}
+              onBulkUpdate={handleGridBulkUpdate}
+              selectedProjectId={selectedProjectId}
+              focusedTaskId={focusedTaskId}
+              onRecalculate={handleRecalculateSchedule}
+            />
+          </div>
+        </Suspense>
       )}
 
       {activeTab === "board" && (
-        <PlannerBoardView tasks={filteredTasks} onUpdateTask={updateTask} />
+        <Suspense fallback={<TabLoadingBox label="Loading board..." />}>
+          <PlannerBoardView tasks={filteredTasks} onUpdateTask={updateTask} />
+        </Suspense>
       )}
 
       {activeTab === "timeline" && (
-        <PlannerTimelineView tasks={filteredTasks} onUpdateTask={updateTask} />
+        <Suspense fallback={<TabLoadingBox label="Loading timeline..." />}>
+          <PlannerTimelineView tasks={filteredTasks} onUpdateTask={updateTask} />
+        </Suspense>
       )}
 
       {activeTab === "sprints" && (
@@ -904,59 +939,65 @@ export default function PlannerPage() {
       )}
 
       {activeTab === "resources" && (
-        <div className="grid gap-3 xl:grid-cols-2">
-          <PlannerResourcesView tasks={filteredTasks} />
+        <Suspense fallback={<TabLoadingBox label="Loading resources..." />}>
+          <div className="grid gap-3 xl:grid-cols-2">
+            <PlannerResourcesView tasks={filteredTasks} />
 
-          <PlannerRelationshipPanel
-            tasks={filteredTasks}
-            selectedTaskId={selectedRelationshipTaskId}
-            onChangeTask={setSelectedRelationshipTaskId}
-            relationship={relationship}
-          />
-        </div>
+            <PlannerRelationshipPanel
+              tasks={filteredTasks}
+              selectedTaskId={selectedRelationshipTaskId}
+              onChangeTask={setSelectedRelationshipTaskId}
+              relationship={relationship}
+            />
+          </div>
+        </Suspense>
       )}
 
       {activeTab === "documents" && (
-        <ProjectDocumentsView
-          selectedProject={selectedProject}
-          projectDocuments={filteredProjectDocuments}
-          onAddDocument={addProjectDocument}
-          onUpdateDocument={updateProjectDocument}
-          onDeleteDocument={deleteProjectDocument}
-        />
+        <Suspense fallback={<TabLoadingBox label="Loading documents..." />}>
+          <ProjectDocumentsView
+            selectedProject={selectedProject}
+            projectDocuments={filteredProjectDocuments}
+            onAddDocument={addProjectDocument}
+            onUpdateDocument={updateProjectDocument}
+            onDeleteDocument={deleteProjectDocument}
+          />
+        </Suspense>
       )}
 
       {activeTab === "reports" && (
-        <div className="space-y-3">
-          <WeeklyCeoReportView
-            selectedProject={selectedProject}
-            tasks={filteredTasks}
-            weeklyReports={filteredWeeklyReports}
-            onAddReport={addWeeklyReport}
-            onUpdateReport={updateWeeklyReport}
-            onDeleteReport={deleteWeeklyReport}
-          />
-
-          <CollapsibleCard
-            title="Baseline Snapshots"
-            subtitle="Open to create or compare baselines."
-            defaultOpen={false}
-          >
-            <PlannerBaselinePanel
-              selectedProjectId={selectedProjectId}
+        <Suspense fallback={<TabLoadingBox label="Loading reports..." />}>
+          <div className="space-y-3">
+            <WeeklyCeoReportView
+              selectedProject={selectedProject}
               tasks={filteredTasks}
-              snapshots={baselineSnapshots}
-              onCreateSnapshot={createBaselineSnapshot}
+              weeklyReports={filteredWeeklyReports}
+              onAddReport={addWeeklyReport}
+              onUpdateReport={updateWeeklyReport}
+              onDeleteReport={deleteWeeklyReport}
             />
-          </CollapsibleCard>
 
-          <PlannerReportsView tasks={filteredTasks} />
+            <CollapsibleCard
+              title="Baseline Snapshots"
+              subtitle="Open to create or compare baselines."
+              defaultOpen={false}
+            >
+              <PlannerBaselinePanel
+                selectedProjectId={selectedProjectId}
+                tasks={filteredTasks}
+                snapshots={baselineSnapshots}
+                onCreateSnapshot={createBaselineSnapshot}
+              />
+            </CollapsibleCard>
 
-          <div className="grid gap-3 xl:grid-cols-2">
-            <PlannerDependencyGraphStarter graph={dependencyGraph} />
-            <PlannerDependencyGraphVisual graph={dependencyGraph} />
+            <PlannerReportsView tasks={filteredTasks} />
+
+            <div className="grid gap-3 xl:grid-cols-2">
+              <PlannerDependencyGraphStarter graph={dependencyGraph} />
+              <PlannerDependencyGraphVisual graph={dependencyGraph} />
+            </div>
           </div>
-        </div>
+        </Suspense>
       )}
     </div>
   );
