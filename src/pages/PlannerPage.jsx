@@ -889,14 +889,15 @@ export default function PlannerPage() {
             />
 
             <PlannerScheduleTable
-              tasks={filteredTasks}
-              sprints={filteredSprints}
-              onAddTask={addTask}
-              onDeleteTask={deleteTask}
-              onBulkUpdate={handleGridBulkUpdate}
-              selectedProjectId={selectedProjectId}
-              focusedTaskId={focusedTaskId}
-              onRecalculate={handleRecalculateSchedule}
+                tasks={filteredTasks}
+                sprints={filteredSprints}
+                onAddTask={addTask}
+                onUpdateTask={updateTask}
+                onDeleteTask={deleteTask}
+                onBulkUpdate={handleGridBulkUpdate}
+                selectedProjectId={selectedProjectId}
+                focusedTaskId={focusedTaskId}
+                onRecalculate={handleRecalculateSchedule}
             />
           </div>
         </Suspense>

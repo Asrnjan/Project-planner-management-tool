@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildTaskIndexMaps,
   calculateEndDateFromDuration,
-  createGridDraftMap,
   getTaskDuration,
   applySingleGridDraftToTask,
-  getTaskQuickFixes,
 } from "../../utils/planner";
 import {
   Plus,
@@ -64,17 +62,6 @@ function GridSelect({ disabled = false, className = "", children, ...props }) {
   );
 }
 
-function issueBadgeClass(severity) {
-  switch (severity) {
-    case "high":
-      return "bg-red-100 text-red-700";
-    case "medium":
-      return "bg-amber-100 text-amber-700";
-    default:
-      return "bg-slate-100 text-slate-700";
-  }
-}
-
 function statusSelectClass(status) {
   switch (status) {
     case "Done":
@@ -126,29 +113,6 @@ function ToolbarButton({ children, variant = "secondary", ...props }) {
   );
 }
 
-function MilestoneCell({ checked, disabled, onChange }) {
-  return (
-    <label
-      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-1 ${
-        checked
-          ? "bg-purple-100 text-purple-700"
-          : disabled
-          ? "bg-slate-100 text-slate-500"
-          : "bg-slate-50 text-slate-700"
-      }`}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        className="h-3 w-3"
-      />
-      <span className="text-[9px] font-medium">MS</span>
-    </label>
-  );
-}
-
 function getTaskDepth(task, taskById) {
   let depth = 0;
   let currentParentId = task.parentTaskId;
@@ -192,10 +156,413 @@ function getDependencyText(task, taskById) {
     .join(", ");
 }
 
+function makeDraftFromTask(task) {
+  return {
+    title: task.title || "",
+    owner: task.owner || "",
+    sprintId: task.sprintId || "",
+    status: task.status || "Not Started",
+    durationDays: Number(task.durationDays || getTaskDuration(task) || 1),
+    plannedStart: task.plannedStart || "",
+    plannedEnd: task.plannedEnd || "",
+    predecessorInput: "",
+    plannedProgress: Number(task.plannedProgress || 0),
+    isMilestone: Boolean(task.isMilestone),
+    isManualLocked: Boolean(task.isManualLocked),
+  };
+}
+
+const ScheduleRow = memo(function ScheduleRow({
+  task,
+  index,
+  tasks,
+  taskById,
+  sprints,
+  selectedProjectId,
+  selectedRowId,
+  flashTaskId,
+  collapsedParents,
+  childCountMap,
+  onSelectRow,
+  onToggleCollapse,
+  onCommitRow,
+  onInsertBelow,
+  onAddSubtask,
+  onDeleteRow,
+  rowRef,
+}) {
+  const hasChildren = Boolean(childCountMap[task.id]);
+  const isSummaryTask = Boolean(task.isSummaryTask || hasChildren);
+  const depth = getTaskDepth(task, taskById);
+  const wbs = getTaskWbs(task, index);
+  const dependencyText = getDependencyText(task, taskById);
+  const isSelected = selectedRowId === task.id;
+  const isFlashing = flashTaskId === task.id;
+
+  const [draft, setDraft] = useState(() => makeDraftFromTask(task));
+  const latestDraftRef = useRef(draft);
+  const isDirtyRef = useRef(false);
+
+  useEffect(() => {
+    const nextDraft = makeDraftFromTask(task);
+    setDraft(nextDraft);
+    latestDraftRef.current = nextDraft;
+    isDirtyRef.current = false;
+  }, [task.id, task.updatedAt]);
+
+  function updateDraft(field, value) {
+    setDraft((prev) => {
+      const next = {
+        ...prev,
+        [field]: value,
+      };
+
+      if (field === "durationDays" && prev.plannedStart) {
+        next.plannedEnd = calculateEndDateFromDuration(
+          prev.plannedStart,
+          value
+        );
+      }
+
+      if (field === "plannedStart") {
+        next.plannedEnd = calculateEndDateFromDuration(
+          value,
+          prev.durationDays || 1
+        );
+      }
+
+      latestDraftRef.current = next;
+      isDirtyRef.current = true;
+
+      return next;
+    });
+  }
+
+  function commitDraft() {
+    if (!isDirtyRef.current) return;
+
+    onCommitRow(task.id, latestDraftRef.current);
+    isDirtyRef.current = false;
+  }
+
+  function commitDraftImmediately(nextDraft) {
+    latestDraftRef.current = nextDraft;
+    isDirtyRef.current = false;
+    setDraft(nextDraft);
+    onCommitRow(task.id, nextDraft);
+  }
+
+  function inputHandlers(field) {
+    return {
+      onChange: (event) => updateDraft(field, event.target.value),
+      onBlur: commitDraft,
+      onKeyDown: (event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        }
+      },
+    };
+  }
+
+  function toggleMilestone(checked) {
+    const nextDraft = {
+      ...latestDraftRef.current,
+      isMilestone: checked,
+    };
+
+    commitDraftImmediately(nextDraft);
+  }
+
+  function toggleManualLock() {
+    const nextDraft = {
+      ...latestDraftRef.current,
+      isManualLocked: !latestDraftRef.current.isManualLocked,
+    };
+
+    commitDraftImmediately(nextDraft);
+  }
+
+  function changeSelect(field, value) {
+    const nextDraft = {
+      ...latestDraftRef.current,
+      [field]: value,
+    };
+
+    commitDraftImmediately(nextDraft);
+  }
+
+  const plannedProgress = Math.min(
+    100,
+    Math.max(0, Number(draft.plannedProgress || 0))
+  );
+
+  return (
+    <tr
+      ref={rowRef}
+      onClick={() => onSelectRow(task.id)}
+      className={`border-b border-slate-200 transition ${
+        isFlashing
+          ? "bg-yellow-100"
+          : isSelected
+          ? "bg-blue-50/60"
+          : isSummaryTask
+          ? "bg-slate-50"
+          : "bg-white hover:bg-slate-50/60"
+      }`}
+    >
+      <td className="px-1 py-1.5 align-top text-[11px] text-slate-500">
+        {index + 1}
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <span
+          className={`inline-flex rounded-md px-1.5 py-1 text-[10px] font-semibold ${
+            isSummaryTask
+              ? "bg-slate-200 text-slate-700"
+              : "bg-slate-100 text-slate-600"
+          }`}
+        >
+          {wbs}
+        </span>
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <div
+          className="flex items-center gap-1"
+          style={{ paddingLeft: `${depth * 10}px` }}
+        >
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleCollapse(task.id);
+              }}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+            >
+              {collapsedParents[task.id] ? (
+                <ChevronRight className="h-3 w-3" />
+              ) : (
+                <ChevronDown className="h-3 w-3" />
+              )}
+            </button>
+          ) : (
+            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-slate-300">
+              {task.parentTaskId ? "└" : ""}
+            </span>
+          )}
+
+          {draft.isMilestone ? (
+            <Milestone className="h-3.5 w-3.5 shrink-0 text-purple-600" />
+          ) : hasChildren ? (
+            <Rows3 className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+          ) : null}
+
+          <GridInput
+            value={draft.title}
+            readOnly={false}
+            {...inputHandlers("title")}
+            className={
+              isSummaryTask
+                ? "font-semibold text-slate-900"
+                : "text-slate-800"
+            }
+          />
+        </div>
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <GridSelect
+          value={draft.sprintId}
+          disabled={isSummaryTask || !selectedProjectId}
+          onChange={(event) => changeSelect("sprintId", event.target.value)}
+        >
+          <option value="">No Sprint</option>
+          {sprints.map((sprint) => (
+            <option key={sprint.id} value={sprint.id}>
+              {sprint.name}
+            </option>
+          ))}
+        </GridSelect>
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <label
+          className={`inline-flex items-center gap-1 rounded-md px-1.5 py-1 ${
+            draft.isMilestone
+              ? "bg-purple-100 text-purple-700"
+              : isSummaryTask
+              ? "bg-slate-100 text-slate-500"
+              : "bg-slate-50 text-slate-700"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={Boolean(draft.isMilestone)}
+            disabled={isSummaryTask}
+            onChange={(event) => toggleMilestone(event.target.checked)}
+            className="h-3 w-3"
+          />
+          <span className="text-[9px] font-medium">MS</span>
+        </label>
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <GridInput
+          type="number"
+          min="1"
+          readOnly={isSummaryTask}
+          value={draft.durationDays}
+          {...inputHandlers("durationDays")}
+        />
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <GridInput
+          type="date"
+          readOnly={isSummaryTask}
+          value={draft.plannedStart}
+          {...inputHandlers("plannedStart")}
+        />
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <GridInput
+          type="date"
+          readOnly={isSummaryTask}
+          value={draft.plannedEnd}
+          {...inputHandlers("plannedEnd")}
+        />
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <GridInput
+          value={draft.predecessorInput}
+          readOnly={isSummaryTask}
+          {...inputHandlers("predecessorInput")}
+          placeholder={dependencyText || "1,3"}
+          title={
+            dependencyText
+              ? `Current predecessors: ${dependencyText}`
+              : "Enter predecessor WBS or row number"
+          }
+        />
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <GridInput
+          value={draft.owner}
+          readOnly={false}
+          {...inputHandlers("owner")}
+        />
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <GridInput
+          type="number"
+          min="0"
+          max="100"
+          readOnly={isSummaryTask}
+          value={draft.plannedProgress}
+          {...inputHandlers("plannedProgress")}
+        />
+
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className={`h-full rounded-full ${progressColor(draft.status)}`}
+            style={{ width: `${plannedProgress}%` }}
+          />
+        </div>
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <GridSelect
+          value={draft.status}
+          disabled={isSummaryTask}
+          className={statusSelectClass(draft.status)}
+          onChange={(event) => changeSelect("status", event.target.value)}
+        >
+          <option>Not Started</option>
+          <option>In Progress</option>
+          <option>Done</option>
+          <option>Blocked</option>
+        </GridSelect>
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-slate-100 px-1.5 text-[10px] font-medium text-slate-600">
+          -
+        </span>
+      </td>
+
+      <td className="px-1 py-1.5 align-top">
+        <div className="flex items-center justify-end gap-1">
+          {!isSummaryTask ? (
+            <IconActionButton
+              type="button"
+              title={draft.isManualLocked ? "Locked" : "Auto"}
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleManualLock();
+              }}
+              className={
+                draft.isManualLocked
+                  ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }
+            >
+              {draft.isManualLocked ? (
+                <Lock className="h-3.5 w-3.5" />
+              ) : (
+                <Unlock className="h-3.5 w-3.5" />
+              )}
+            </IconActionButton>
+          ) : (
+            <span className="inline-flex h-6 items-center rounded-md bg-slate-100 px-1.5 text-[9px] font-medium text-slate-600">
+              Roll
+            </span>
+          )}
+
+          <IconActionButton
+            type="button"
+            title={isSummaryTask ? "Add subtask" : "Insert below"}
+            onClick={(event) => {
+              event.stopPropagation();
+
+              if (isSummaryTask) {
+                onAddSubtask(task.id);
+              } else {
+                onSelectRow(task.id);
+                onInsertBelow(task.id);
+              }
+            }}
+            className="bg-slate-100 text-slate-700 hover:bg-slate-200"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </IconActionButton>
+
+          <IconActionButton
+            type="button"
+            title="Delete row"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDeleteRow(task.id);
+            }}
+            className="bg-red-50 text-red-700 hover:bg-red-100"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </IconActionButton>
+        </div>
+      </td>
+    </tr>
+  );
+});
+
 export default function PlannerScheduleTable({
   tasks,
   sprints,
   onAddTask,
+  onUpdateTask,
   onBulkUpdate,
   onDeleteTask,
   selectedProjectId,
@@ -206,33 +573,15 @@ export default function PlannerScheduleTable({
 
   const [collapsedParents, setCollapsedParents] = useState({});
   const [selectedRowId, setSelectedRowId] = useState("");
-  const [drafts, setDrafts] = useState({});
   const [flashTaskId, setFlashTaskId] = useState("");
-  const [lastActionText, setLastActionText] = useState("Auto-save ready");
+  const [lastActionText, setLastActionText] = useState("Ready");
 
   const rowRefs = useRef({});
   const undoStackRef = useRef([]);
-  const draftSaveTimersRef = useRef({});
-  const editingRef = useRef(false);
 
   const taskById = useMemo(() => {
     return Object.fromEntries(tasks.map((task) => [task.id, task]));
   }, [tasks]);
-
-  useEffect(() => {
-    if (editingRef.current) return;
-    setDrafts(createGridDraftMap(tasks));
-  }, [tasks]);
-
-  useEffect(() => {
-    return () => {
-      Object.values(draftSaveTimersRef.current).forEach((timer) => {
-        clearTimeout(timer);
-      });
-
-      draftSaveTimersRef.current = {};
-    };
-  }, []);
 
   const childCountMap = useMemo(() => {
     const map = {};
@@ -315,7 +664,7 @@ export default function PlannerScheduleTable({
   }, [ordered, collapsedParents, taskById]);
 
   function pushUndoSnapshot() {
-    undoStackRef.current = [...undoStackRef.current, tasks].slice(-50);
+    undoStackRef.current = [...undoStackRef.current, tasks].slice(-30);
   }
 
   function handleUndo() {
@@ -327,7 +676,7 @@ export default function PlannerScheduleTable({
     }
 
     onBulkUpdate(previous);
-    setLastActionText("Rolled back last change");
+    setLastActionText("Rolled back");
   }
 
   function handleGridKeyDown(event) {
@@ -360,31 +709,31 @@ export default function PlannerScheduleTable({
     setCollapsedParents(next);
   }
 
-  function commitTaskUpdate(taskId, nextDraft, options = {}) {
-    const { shouldPushUndo = true } = options;
-
+  function handleCommitRow(taskId, nextDraft) {
     const task = tasks.find((item) => item.id === taskId);
     if (!task) return;
 
     const hasChildren = Boolean(childCountMap[taskId]);
 
-    if (shouldPushUndo) {
-      pushUndoSnapshot();
-    }
+    pushUndoSnapshot();
 
     if (hasChildren) {
-      const updatedSummaryRow = {
-        ...task,
+      const updates = {
         title: nextDraft.title,
         owner: nextDraft.owner,
+        updatedAt: new Date().toISOString(),
       };
 
-      const nextTasks = tasks.map((item) =>
-        item.id === taskId ? updatedSummaryRow : item
-      );
+      if (onUpdateTask) {
+        onUpdateTask(taskId, updates);
+      } else {
+        const nextTasks = tasks.map((item) =>
+          item.id === taskId ? { ...item, ...updates } : item
+        );
+        onBulkUpdate(nextTasks);
+      }
 
-      onBulkUpdate(nextTasks);
-      setLastActionText("Saved summary row");
+      setLastActionText("Saved");
       return;
     }
 
@@ -394,90 +743,21 @@ export default function PlannerScheduleTable({
       tasks
     );
 
-    const nextTasks = tasks.map((item) =>
-      item.id === taskId ? updatedRow : item
-    );
+    const updates = {
+      ...updatedRow,
+      updatedAt: new Date().toISOString(),
+    };
 
-    onBulkUpdate(nextTasks);
+    if (onUpdateTask) {
+      onUpdateTask(taskId, updates);
+    } else {
+      const nextTasks = tasks.map((item) =>
+        item.id === taskId ? updates : item
+      );
+      onBulkUpdate(nextTasks);
+    }
+
     setLastActionText("Saved");
-  }
-
-  function scheduleTaskCommit(taskId, nextDraft) {
-    editingRef.current = true;
-    setLastActionText("Editing...");
-
-    if (draftSaveTimersRef.current[taskId]) {
-      clearTimeout(draftSaveTimersRef.current[taskId]);
-    }
-
-    draftSaveTimersRef.current[taskId] = setTimeout(() => {
-      commitTaskUpdate(taskId, nextDraft);
-      delete draftSaveTimersRef.current[taskId];
-
-      setTimeout(() => {
-        editingRef.current = false;
-      }, 150);
-    }, 900);
-  }
-
-  function flushTaskCommit(taskId) {
-    const currentDraft = drafts[taskId];
-
-    if (!currentDraft) return;
-
-    if (draftSaveTimersRef.current[taskId]) {
-      clearTimeout(draftSaveTimersRef.current[taskId]);
-      delete draftSaveTimersRef.current[taskId];
-    }
-
-    commitTaskUpdate(taskId, currentDraft);
-    setTimeout(() => {
-      editingRef.current = false;
-    }, 150);
-  }
-
-  function updateDraft(taskId, field, value) {
-    const current = drafts[taskId] || {};
-    const nextDraft = {
-      ...current,
-      [field]: value,
-    };
-
-    if (field === "durationDays" && current.plannedStart) {
-      nextDraft.plannedEnd = calculateEndDateFromDuration(
-        current.plannedStart,
-        value
-      );
-    }
-
-    if (field === "plannedStart") {
-      nextDraft.plannedEnd = calculateEndDateFromDuration(
-        value,
-        current.durationDays || 1
-      );
-    }
-
-    setDrafts((prev) => ({
-      ...prev,
-      [taskId]: nextDraft,
-    }));
-
-    scheduleTaskCommit(taskId, nextDraft);
-  }
-
-  function toggleManualLock(taskId) {
-    const current = drafts[taskId] || {};
-    const nextDraft = {
-      ...current,
-      isManualLocked: !current.isManualLocked,
-    };
-
-    setDrafts((prev) => ({
-      ...prev,
-      [taskId]: nextDraft,
-    }));
-
-    commitTaskUpdate(taskId, nextDraft);
   }
 
   function handleAddRow() {
@@ -606,13 +886,6 @@ export default function PlannerScheduleTable({
     setLastActionText("Deleted row");
   }
 
-  function inputHandlers(taskId, field) {
-    return {
-      onChange: (event) => updateDraft(taskId, field, event.target.value),
-      onBlur: () => flushTaskCommit(taskId),
-    };
-  }
-
   return (
     <div
       className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
@@ -632,8 +905,7 @@ export default function PlannerScheduleTable({
             </h3>
 
             <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
-              Edits are saved after you stop typing. Use Ctrl + Z inside the
-              grid to rollback the last change.
+              Edit freely. A row saves when you leave the edited cell.
             </p>
           </div>
 
@@ -743,324 +1015,30 @@ export default function PlannerScheduleTable({
           </thead>
 
           <tbody>
-            {visibleTasks.map((task, index) => {
-              const hasChildren = Boolean(childCountMap[task.id]);
-              const depth = getTaskDepth(task, taskById);
-              const wbs = getTaskWbs(task, index);
-              const dependencyText = getDependencyText(task, taskById);
-
-              const draft = drafts[task.id] || {
-                title: task.title || "",
-                owner: task.owner || "",
-                sprintId: task.sprintId || "",
-                status: task.status || "Not Started",
-                durationDays: getTaskDuration(task),
-                plannedStart: task.plannedStart || "",
-                plannedEnd: task.plannedEnd || "",
-                predecessorInput: "",
-                plannedProgress: Number(task.plannedProgress || 0),
-                isMilestone: Boolean(task.isMilestone),
-                isManualLocked: Boolean(task.isManualLocked),
-              };
-
-              const previewTask = {
-                ...task,
-                title: draft.title,
-                owner: draft.owner,
-                sprintId: draft.sprintId,
-                status: draft.status,
-                plannedStart: draft.plannedStart,
-                plannedEnd: draft.plannedEnd,
-                plannedProgress: draft.plannedProgress,
-                isMilestone: draft.isMilestone,
-                durationDays: draft.durationDays,
-                isManualLocked: draft.isManualLocked,
-              };
-
-              const rowFixes = getTaskQuickFixes(previewTask, tasks);
-              const topFix = rowFixes[0];
-
-              const isSelected = selectedRowId === task.id;
-              const isSummaryTask = Boolean(task.isSummaryTask || hasChildren);
-              const isFlashing = flashTaskId === task.id;
-              const plannedProgress = Math.min(
-                100,
-                Math.max(0, Number(draft.plannedProgress || 0))
-              );
-
-              return (
-                <tr
-                  key={task.id}
-                  ref={(element) => {
-                    rowRefs.current[task.id] = element;
-                  }}
-                  onClick={() => setSelectedRowId(task.id)}
-                  className={`border-b border-slate-200 transition ${
-                    isFlashing
-                      ? "bg-yellow-100"
-                      : isSelected
-                      ? "bg-blue-50/60"
-                      : isSummaryTask
-                      ? "bg-slate-50"
-                      : "bg-white hover:bg-slate-50/60"
-                  }`}
-                >
-                  <td className="px-1 py-1.5 align-top text-[11px] text-slate-500">
-                    {index + 1}
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <span
-                      className={`inline-flex rounded-md px-1.5 py-1 text-[10px] font-semibold ${
-                        isSummaryTask
-                          ? "bg-slate-200 text-slate-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {wbs}
-                    </span>
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <div
-                      className="flex items-center gap-1"
-                      style={{ paddingLeft: `${depth * 10}px` }}
-                    >
-                      {hasChildren ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleCollapse(task.id);
-                          }}
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
-                        >
-                          {collapsedParents[task.id] ? (
-                            <ChevronRight className="h-3 w-3" />
-                          ) : (
-                            <ChevronDown className="h-3 w-3" />
-                          )}
-                        </button>
-                      ) : (
-                        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-slate-300">
-                          {task.parentTaskId ? "└" : ""}
-                        </span>
-                      )}
-
-                      {draft.isMilestone ? (
-                        <Milestone className="h-3.5 w-3.5 shrink-0 text-purple-600" />
-                      ) : hasChildren ? (
-                        <Rows3 className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                      ) : null}
-
-                      <GridInput
-                        value={draft.title}
-                        readOnly={false}
-                        {...inputHandlers(task.id, "title")}
-                        className={
-                          isSummaryTask
-                            ? "font-semibold text-slate-900"
-                            : "text-slate-800"
-                        }
-                      />
-                    </div>
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <GridSelect
-                      value={draft.sprintId}
-                      disabled={isSummaryTask || !selectedProjectId}
-                      onChange={(event) =>
-                        updateDraft(task.id, "sprintId", event.target.value)
-                      }
-                      onBlur={() => flushTaskCommit(task.id)}
-                    >
-                      <option value="">No Sprint</option>
-                      {sprints.map((sprint) => (
-                        <option key={sprint.id} value={sprint.id}>
-                          {sprint.name}
-                        </option>
-                      ))}
-                    </GridSelect>
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <MilestoneCell
-                      checked={Boolean(draft.isMilestone)}
-                      disabled={isSummaryTask}
-                      onChange={(checked) =>
-                        updateDraft(task.id, "isMilestone", checked)
-                      }
-                    />
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <GridInput
-                      type="number"
-                      min="1"
-                      readOnly={isSummaryTask}
-                      value={draft.durationDays}
-                      {...inputHandlers(task.id, "durationDays")}
-                    />
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <GridInput
-                      type="date"
-                      readOnly={isSummaryTask}
-                      value={draft.plannedStart}
-                      {...inputHandlers(task.id, "plannedStart")}
-                    />
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <GridInput
-                      type="date"
-                      readOnly={isSummaryTask}
-                      value={draft.plannedEnd}
-                      {...inputHandlers(task.id, "plannedEnd")}
-                    />
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <GridInput
-                      value={draft.predecessorInput}
-                      readOnly={isSummaryTask}
-                      {...inputHandlers(task.id, "predecessorInput")}
-                      placeholder={dependencyText || "1,3"}
-                      title={
-                        dependencyText
-                          ? `Current predecessors: ${dependencyText}`
-                          : "Enter predecessor WBS or row number"
-                      }
-                    />
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <GridInput
-                      value={draft.owner}
-                      readOnly={false}
-                      {...inputHandlers(task.id, "owner")}
-                    />
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <GridInput
-                      type="number"
-                      min="0"
-                      max="100"
-                      readOnly={isSummaryTask}
-                      value={draft.plannedProgress}
-                      {...inputHandlers(task.id, "plannedProgress")}
-                    />
-
-                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className={`h-full rounded-full ${progressColor(
-                          draft.status
-                        )}`}
-                        style={{ width: `${plannedProgress}%` }}
-                      />
-                    </div>
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <GridSelect
-                      value={draft.status}
-                      disabled={isSummaryTask}
-                      className={statusSelectClass(draft.status)}
-                      onChange={(event) =>
-                        updateDraft(task.id, "status", event.target.value)
-                      }
-                      onBlur={() => flushTaskCommit(task.id)}
-                    >
-                      <option>Not Started</option>
-                      <option>In Progress</option>
-                      <option>Done</option>
-                      <option>Blocked</option>
-                    </GridSelect>
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    {topFix ? (
-                      <div title={`${topFix.message} Quick fix: ${topFix.fix}`}>
-                        <span
-                          className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-medium ${issueBadgeClass(
-                            topFix.severity
-                          )}`}
-                        >
-                          {rowFixes.length}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-100 px-1.5 text-[10px] font-medium text-emerald-700">
-                        OK
-                      </span>
-                    )}
-                  </td>
-
-                  <td className="px-1 py-1.5 align-top">
-                    <div className="flex items-center justify-end gap-1">
-                      {!isSummaryTask ? (
-                        <IconActionButton
-                          type="button"
-                          title={draft.isManualLocked ? "Locked" : "Auto"}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleManualLock(task.id);
-                          }}
-                          className={
-                            draft.isManualLocked
-                              ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                          }
-                        >
-                          {draft.isManualLocked ? (
-                            <Lock className="h-3.5 w-3.5" />
-                          ) : (
-                            <Unlock className="h-3.5 w-3.5" />
-                          )}
-                        </IconActionButton>
-                      ) : (
-                        <span className="inline-flex h-6 items-center rounded-md bg-slate-100 px-1.5 text-[9px] font-medium text-slate-600">
-                          Roll
-                        </span>
-                      )}
-
-                      <IconActionButton
-                        type="button"
-                        title={isSummaryTask ? "Add subtask" : "Insert below"}
-                        onClick={(event) => {
-                          event.stopPropagation();
-
-                          if (isSummaryTask) {
-                            handleAddSubtask(task.id);
-                          } else {
-                            setSelectedRowId(task.id);
-                            handleInsertBelow(task.id);
-                          }
-                        }}
-                        className="bg-slate-100 text-slate-700 hover:bg-slate-200"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </IconActionButton>
-
-                      <IconActionButton
-                        type="button"
-                        title="Delete row"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleDeleteRow(task.id);
-                        }}
-                        className="bg-red-50 text-red-700 hover:bg-red-100"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </IconActionButton>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+            {visibleTasks.map((task, index) => (
+              <ScheduleRow
+                key={task.id}
+                task={task}
+                index={index}
+                tasks={tasks}
+                taskById={taskById}
+                sprints={sprints}
+                selectedProjectId={selectedProjectId}
+                selectedRowId={selectedRowId}
+                flashTaskId={flashTaskId}
+                collapsedParents={collapsedParents}
+                childCountMap={childCountMap}
+                onSelectRow={setSelectedRowId}
+                onToggleCollapse={toggleCollapse}
+                onCommitRow={handleCommitRow}
+                onInsertBelow={handleInsertBelow}
+                onAddSubtask={handleAddSubtask}
+                onDeleteRow={handleDeleteRow}
+                rowRef={(element) => {
+                  rowRefs.current[task.id] = element;
+                }}
+              />
+            ))}
 
             {visibleTasks.length === 0 && (
               <tr>
@@ -1079,23 +1057,23 @@ export default function PlannerScheduleTable({
       <div className="border-t border-slate-200 bg-slate-50/60 px-3 py-2">
         <div className="grid gap-1 text-[10px] text-slate-600 md:grid-cols-4">
           <div>
-            <span className="font-medium text-slate-800">Save:</span> changes
-            save after editing stops.
+            <span className="font-medium text-slate-800">Save:</span> row saves
+            after leaving the edited cell.
           </div>
 
           <div>
             <span className="font-medium text-slate-800">Undo:</span> Ctrl + Z
-            rolls back the last change.
+            rolls back the last saved row change.
           </div>
 
           <div>
-            <span className="font-medium text-slate-800">Rollup:</span> parent
-            rows are calculated.
+            <span className="font-medium text-slate-800">Performance:</span>{" "}
+            only the edited row re-renders.
           </div>
 
           <div>
             <span className="font-medium text-slate-800">Actions:</span> lock,
-            insert/subtask, delete.
+            insert, subtask, delete.
           </div>
         </div>
       </div>
