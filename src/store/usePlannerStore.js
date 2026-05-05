@@ -26,6 +26,10 @@ import {
   deleteProjectDocumentCloud,
 } from "../services/documentService";
 
+let cloudSaveTimer = null;
+let cloudSaveInProgress = false;
+let pendingCloudState = null;
+
 function makeId(prefix = "id") {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return `${prefix}-${crypto.randomUUID()}`;
@@ -101,6 +105,9 @@ function normalizeTask(task = {}) {
     sprintId: task.sprintId || "",
     parentTaskId: task.parentTaskId || "",
     dependencyIds: Array.isArray(task.dependencyIds) ? task.dependencyIds : [],
+    dependencyRules: Array.isArray(task.dependencyRules)
+      ? task.dependencyRules
+      : [],
     title: task.title?.trim() || "Untitled Task",
     owner: task.owner || "",
     priority: task.priority || "Medium",
@@ -113,7 +120,14 @@ function normalizeTask(task = {}) {
     baselineEnd: task.baselineEnd || "",
     plannedProgress: Number(task.plannedProgress || 0),
     actualProgress: Number(task.actualProgress || 0),
+    durationDays: Number(task.durationDays || 1),
     isMilestone: Boolean(task.isMilestone),
+    isManualLocked: Boolean(task.isManualLocked),
+    isSummaryTask: Boolean(task.isSummaryTask),
+    wbs: task.wbs || "",
+    outlineNumber: task.outlineNumber || "",
+    externalId: task.externalId || "",
+    externalUid: task.externalUid || "",
     createdAt: task.createdAt || timestamp,
     updatedAt: task.updatedAt || timestamp,
   };
@@ -378,6 +392,52 @@ async function persistCurrentWorkspaceToCloud(state) {
   await Promise.all(saveJobs);
 }
 
+function queueCloudWorkspaceSave(state, delay = 3000) {
+  pendingCloudState = {
+    ...state,
+    projects: [...state.projects],
+    sprints: [...state.sprints],
+    tasks: [...state.tasks],
+    baselineSnapshots: [...state.baselineSnapshots],
+    weeklyReports: [...state.weeklyReports],
+    projectDocuments: [...state.projectDocuments],
+    plannerSettings: { ...state.plannerSettings },
+  };
+
+  if (cloudSaveTimer) {
+    window.clearTimeout(cloudSaveTimer);
+  }
+
+  cloudSaveTimer = window.setTimeout(async () => {
+    if (cloudSaveInProgress) {
+      queueCloudWorkspaceSave(pendingCloudState, 2000);
+      return;
+    }
+
+    const stateToSave = pendingCloudState;
+    pendingCloudState = null;
+    cloudSaveTimer = null;
+    cloudSaveInProgress = true;
+
+    try {
+      await persistCurrentWorkspaceToCloud(stateToSave);
+    } catch (error) {
+      console.error("Debounced cloud workspace save failed:", error);
+    } finally {
+      cloudSaveInProgress = false;
+
+      if (pendingCloudState) {
+        queueCloudWorkspaceSave(pendingCloudState, 2000);
+      }
+    }
+  }, delay);
+}
+
+function persistLocalAndQueueCloud(next, delay = 3000) {
+  persist(next);
+  queueCloudWorkspaceSave(next, delay);
+}
+
 const initialData = normalizePlannerData(loadPlannerData() || emptyPlannerData());
 
 export const usePlannerStore = create((set, get) => ({
@@ -481,6 +541,13 @@ export const usePlannerStore = create((set, get) => ({
   clearWorkspaceForLogout: () => {
     const userId = get().currentUserId;
 
+    if (cloudSaveTimer) {
+      window.clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = null;
+    }
+
+    pendingCloudState = null;
+
     if (userId) {
       clearPlannerData(userId);
     }
@@ -550,8 +617,7 @@ export const usePlannerStore = create((set, get) => ({
         },
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next);
 
       return next;
     });
@@ -586,8 +652,7 @@ export const usePlannerStore = create((set, get) => ({
         baselineSnapshots: [snapshot, ...state.baselineSnapshots],
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next);
 
       return next;
     });
@@ -602,8 +667,7 @@ export const usePlannerStore = create((set, get) => ({
         ...normalizedPayload,
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next, 5000);
 
       return next;
     });
@@ -703,7 +767,7 @@ export const usePlannerStore = create((set, get) => ({
 
         alert(
           error?.message ||
-            "Project was added locally, but failed to save in Supabase. Please click Save Now after checking your connection."
+            "Project was added locally, but failed to save in Supabase."
         );
       });
 
@@ -739,37 +803,7 @@ export const usePlannerStore = create((set, get) => ({
         }),
       };
 
-      persist(next);
-
-      if (updatedProject) {
-        const latestPayload = {
-          ...updatedProject,
-          userId: state.currentUserId,
-          projects: [updatedProject],
-          sprints: next.sprints.filter(
-            (sprint) => sprint.projectId === updatedProject.id
-          ),
-          tasks: next.tasks.filter((task) => task.projectId === updatedProject.id),
-          baselineSnapshots: next.baselineSnapshots.filter(
-            (snapshot) =>
-              !snapshot.projectId || snapshot.projectId === updatedProject.id
-          ),
-          weeklyReports: next.weeklyReports.filter(
-            (report) => report.projectId === updatedProject.id
-          ),
-          projectDocuments: next.projectDocuments.filter(
-            (document) => document.projectId === updatedProject.id
-          ),
-          plannerSettings: next.plannerSettings,
-          savedAt: nowIso(),
-          saveType: "single_project_workspace",
-          fullWorkspaceSnapshot: makeWorkspacePayload(next),
-        };
-
-        saveProject(latestPayload).catch((error) => {
-          console.error("Failed to update project in Supabase:", error);
-        });
-      }
+      persistLocalAndQueueCloud(next);
 
       return next;
     });
@@ -983,35 +1017,7 @@ export const usePlannerStore = create((set, get) => ({
         projectDocuments: [...duplicatedDocuments, ...state.projectDocuments],
       };
 
-      persist(next);
-
-      saveProject({
-        ...duplicatedProject,
-        userId: state.currentUserId,
-        projects: [duplicatedProject],
-        sprints: duplicatedSprints,
-        tasks: duplicatedTasks,
-        weeklyReports: duplicatedReports,
-        projectDocuments: duplicatedDocuments,
-        baselineSnapshots: [],
-        plannerSettings: state.plannerSettings,
-        savedAt: nowIso(),
-        saveType: "single_project_workspace",
-      }).catch((error) => {
-        console.error("Failed to save duplicated project to Supabase:", error);
-      });
-
-      duplicatedReports.forEach((report) => {
-        saveWeeklyReport(report).catch((error) => {
-          console.error("Failed to save duplicated weekly report:", error);
-        });
-      });
-
-      duplicatedDocuments.forEach((document) => {
-        saveProjectDocument(document).catch((error) => {
-          console.error("Failed to save duplicated project document:", error);
-        });
-      });
+      persistLocalAndQueueCloud(next, 5000);
 
       return next;
     });
@@ -1029,8 +1035,7 @@ export const usePlannerStore = create((set, get) => ({
         sprints: [...state.sprints, newSprint],
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next);
 
       return next;
     });
@@ -1052,8 +1057,7 @@ export const usePlannerStore = create((set, get) => ({
         ),
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next);
 
       return next;
     });
@@ -1072,8 +1076,7 @@ export const usePlannerStore = create((set, get) => ({
         ),
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next);
 
       return next;
     });
@@ -1091,8 +1094,7 @@ export const usePlannerStore = create((set, get) => ({
         tasks: [...state.tasks, newTask],
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next);
 
       return next;
     });
@@ -1104,15 +1106,20 @@ export const usePlannerStore = create((set, get) => ({
         ...state,
         tasks: state.tasks.map((task) =>
           task.id === taskId
-            ? {
+            ? normalizeTask({
                 ...task,
                 ...updates,
 
+                id: task.id,
                 userId: task.userId || state.currentUserId,
 
                 dependencyIds: Array.isArray(updates.dependencyIds)
                   ? updates.dependencyIds
                   : task.dependencyIds || [],
+
+                dependencyRules: Array.isArray(updates.dependencyRules)
+                  ? updates.dependencyRules
+                  : task.dependencyRules || [],
 
                 parentTaskId: updates.parentTaskId ?? task.parentTaskId ?? "",
 
@@ -1124,16 +1131,23 @@ export const usePlannerStore = create((set, get) => ({
                   updates.actualProgress ?? task.actualProgress ?? 0
                 ),
 
-                isMilestone: Boolean(updates.isMilestone ?? task.isMilestone),
+                durationDays: Number(
+                  updates.durationDays ?? task.durationDays ?? 1
+                ),
 
+                isMilestone: Boolean(updates.isMilestone ?? task.isMilestone),
+                isManualLocked: Boolean(
+                  updates.isManualLocked ?? task.isManualLocked
+                ),
+
+                createdAt: task.createdAt,
                 updatedAt: nowIso(),
-              }
+              })
             : task
         ),
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next, 3500);
 
       return next;
     });
@@ -1155,8 +1169,7 @@ export const usePlannerStore = create((set, get) => ({
           : [],
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next, 3500);
 
       return next;
     });
@@ -1180,8 +1193,7 @@ export const usePlannerStore = create((set, get) => ({
           })),
       };
 
-      persist(next);
-      persistCurrentWorkspaceToCloud(next);
+      persistLocalAndQueueCloud(next);
 
       return next;
     });
@@ -1353,6 +1365,13 @@ export const usePlannerStore = create((set, get) => ({
 
   resetAllData: () => {
     const userId = get().currentUserId;
+
+    if (cloudSaveTimer) {
+      window.clearTimeout(cloudSaveTimer);
+      cloudSaveTimer = null;
+    }
+
+    pendingCloudState = null;
 
     clearPlannerData(userId);
 

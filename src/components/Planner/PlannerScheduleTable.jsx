@@ -212,14 +212,27 @@ export default function PlannerScheduleTable({
 
   const rowRefs = useRef({});
   const undoStackRef = useRef([]);
+  const draftSaveTimersRef = useRef({});
+  const editingRef = useRef(false);
 
   const taskById = useMemo(() => {
     return Object.fromEntries(tasks.map((task) => [task.id, task]));
   }, [tasks]);
 
   useEffect(() => {
+    if (editingRef.current) return;
     setDrafts(createGridDraftMap(tasks));
   }, [tasks]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(draftSaveTimersRef.current).forEach((timer) => {
+        clearTimeout(timer);
+      });
+
+      draftSaveTimersRef.current = {};
+    };
+  }, []);
 
   const childCountMap = useMemo(() => {
     const map = {};
@@ -293,13 +306,13 @@ export default function PlannerScheduleTable({
       while (currentParentId) {
         if (collapsedParents[currentParentId]) return false;
 
-        const parent = ordered.find((item) => item.id === currentParentId);
+        const parent = taskById[currentParentId];
         currentParentId = parent?.parentTaskId || "";
       }
 
       return true;
     });
-  }, [ordered, collapsedParents]);
+  }, [ordered, collapsedParents, taskById]);
 
   function pushUndoSnapshot() {
     undoStackRef.current = [...undoStackRef.current, tasks].slice(-50);
@@ -347,13 +360,17 @@ export default function PlannerScheduleTable({
     setCollapsedParents(next);
   }
 
-  function commitTaskUpdate(taskId, nextDraft) {
+  function commitTaskUpdate(taskId, nextDraft, options = {}) {
+    const { shouldPushUndo = true } = options;
+
     const task = tasks.find((item) => item.id === taskId);
     if (!task) return;
 
     const hasChildren = Boolean(childCountMap[taskId]);
 
-    pushUndoSnapshot();
+    if (shouldPushUndo) {
+      pushUndoSnapshot();
+    }
 
     if (hasChildren) {
       const updatedSummaryRow = {
@@ -367,7 +384,7 @@ export default function PlannerScheduleTable({
       );
 
       onBulkUpdate(nextTasks);
-      setLastActionText("Auto-saved summary row");
+      setLastActionText("Saved summary row");
       return;
     }
 
@@ -382,7 +399,41 @@ export default function PlannerScheduleTable({
     );
 
     onBulkUpdate(nextTasks);
-    setLastActionText("Auto-saved");
+    setLastActionText("Saved");
+  }
+
+  function scheduleTaskCommit(taskId, nextDraft) {
+    editingRef.current = true;
+    setLastActionText("Editing...");
+
+    if (draftSaveTimersRef.current[taskId]) {
+      clearTimeout(draftSaveTimersRef.current[taskId]);
+    }
+
+    draftSaveTimersRef.current[taskId] = setTimeout(() => {
+      commitTaskUpdate(taskId, nextDraft);
+      delete draftSaveTimersRef.current[taskId];
+
+      setTimeout(() => {
+        editingRef.current = false;
+      }, 150);
+    }, 900);
+  }
+
+  function flushTaskCommit(taskId) {
+    const currentDraft = drafts[taskId];
+
+    if (!currentDraft) return;
+
+    if (draftSaveTimersRef.current[taskId]) {
+      clearTimeout(draftSaveTimersRef.current[taskId]);
+      delete draftSaveTimersRef.current[taskId];
+    }
+
+    commitTaskUpdate(taskId, currentDraft);
+    setTimeout(() => {
+      editingRef.current = false;
+    }, 150);
   }
 
   function updateDraft(taskId, field, value) {
@@ -411,7 +462,7 @@ export default function PlannerScheduleTable({
       [taskId]: nextDraft,
     }));
 
-    commitTaskUpdate(taskId, nextDraft);
+    scheduleTaskCommit(taskId, nextDraft);
   }
 
   function toggleManualLock(taskId) {
@@ -555,6 +606,13 @@ export default function PlannerScheduleTable({
     setLastActionText("Deleted row");
   }
 
+  function inputHandlers(taskId, field) {
+    return {
+      onChange: (event) => updateDraft(taskId, field, event.target.value),
+      onBlur: () => flushTaskCommit(taskId),
+    };
+  }
+
   return (
     <div
       className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
@@ -574,8 +632,8 @@ export default function PlannerScheduleTable({
             </h3>
 
             <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
-              Changes are auto-saved locally. Use Ctrl + Z inside the grid to
-              rollback the last change.
+              Edits are saved after you stop typing. Use Ctrl + Z inside the
+              grid to rollback the last change.
             </p>
           </div>
 
@@ -646,23 +704,23 @@ export default function PlannerScheduleTable({
         </div>
       </div>
 
-      <div className="overflow-hidden">
-        <table className="w-full table-fixed border-collapse text-xs">
+      <div className="overflow-x-auto">
+        <table className="min-w-[1350px] table-fixed border-collapse text-xs">
           <colgroup>
-            <col style={{ width: "2%" }} />
-            <col style={{ width: "4.5%" }} />
-            <col style={{ width: "25%" }} />
-            <col style={{ width: "8%" }} />
-            <col style={{ width: "4%" }} />
-            <col style={{ width: "5%" }} />
-            <col style={{ width: "7.5%" }} />
-            <col style={{ width: "7.5%" }} />
-            <col style={{ width: "6.5%" }} />
-            <col style={{ width: "6%" }} />
-            <col style={{ width: "7%" }} />
-            <col style={{ width: "8%" }} />
-            <col style={{ width: "4.5%" }} />
-            <col style={{ width: "4.5%" }} />
+            <col style={{ width: "34px" }} />
+            <col style={{ width: "70px" }} />
+            <col style={{ width: "330px" }} />
+            <col style={{ width: "130px" }} />
+            <col style={{ width: "55px" }} />
+            <col style={{ width: "70px" }} />
+            <col style={{ width: "115px" }} />
+            <col style={{ width: "115px" }} />
+            <col style={{ width: "110px" }} />
+            <col style={{ width: "115px" }} />
+            <col style={{ width: "90px" }} />
+            <col style={{ width: "130px" }} />
+            <col style={{ width: "60px" }} />
+            <col style={{ width: "70px" }} />
           </colgroup>
 
           <thead className="bg-slate-50">
@@ -798,9 +856,7 @@ export default function PlannerScheduleTable({
                       <GridInput
                         value={draft.title}
                         readOnly={false}
-                        onChange={(event) =>
-                          updateDraft(task.id, "title", event.target.value)
-                        }
+                        {...inputHandlers(task.id, "title")}
                         className={
                           isSummaryTask
                             ? "font-semibold text-slate-900"
@@ -817,6 +873,7 @@ export default function PlannerScheduleTable({
                       onChange={(event) =>
                         updateDraft(task.id, "sprintId", event.target.value)
                       }
+                      onBlur={() => flushTaskCommit(task.id)}
                     >
                       <option value="">No Sprint</option>
                       {sprints.map((sprint) => (
@@ -843,13 +900,7 @@ export default function PlannerScheduleTable({
                       min="1"
                       readOnly={isSummaryTask}
                       value={draft.durationDays}
-                      onChange={(event) =>
-                        updateDraft(
-                          task.id,
-                          "durationDays",
-                          event.target.value
-                        )
-                      }
+                      {...inputHandlers(task.id, "durationDays")}
                     />
                   </td>
 
@@ -858,13 +909,7 @@ export default function PlannerScheduleTable({
                       type="date"
                       readOnly={isSummaryTask}
                       value={draft.plannedStart}
-                      onChange={(event) =>
-                        updateDraft(
-                          task.id,
-                          "plannedStart",
-                          event.target.value
-                        )
-                      }
+                      {...inputHandlers(task.id, "plannedStart")}
                     />
                   </td>
 
@@ -873,9 +918,7 @@ export default function PlannerScheduleTable({
                       type="date"
                       readOnly={isSummaryTask}
                       value={draft.plannedEnd}
-                      onChange={(event) =>
-                        updateDraft(task.id, "plannedEnd", event.target.value)
-                      }
+                      {...inputHandlers(task.id, "plannedEnd")}
                     />
                   </td>
 
@@ -883,13 +926,7 @@ export default function PlannerScheduleTable({
                     <GridInput
                       value={draft.predecessorInput}
                       readOnly={isSummaryTask}
-                      onChange={(event) =>
-                        updateDraft(
-                          task.id,
-                          "predecessorInput",
-                          event.target.value
-                        )
-                      }
+                      {...inputHandlers(task.id, "predecessorInput")}
                       placeholder={dependencyText || "1,3"}
                       title={
                         dependencyText
@@ -903,9 +940,7 @@ export default function PlannerScheduleTable({
                     <GridInput
                       value={draft.owner}
                       readOnly={false}
-                      onChange={(event) =>
-                        updateDraft(task.id, "owner", event.target.value)
-                      }
+                      {...inputHandlers(task.id, "owner")}
                     />
                   </td>
 
@@ -916,13 +951,7 @@ export default function PlannerScheduleTable({
                       max="100"
                       readOnly={isSummaryTask}
                       value={draft.plannedProgress}
-                      onChange={(event) =>
-                        updateDraft(
-                          task.id,
-                          "plannedProgress",
-                          event.target.value
-                        )
-                      }
+                      {...inputHandlers(task.id, "plannedProgress")}
                     />
 
                     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
@@ -943,6 +972,7 @@ export default function PlannerScheduleTable({
                       onChange={(event) =>
                         updateDraft(task.id, "status", event.target.value)
                       }
+                      onBlur={() => flushTaskCommit(task.id)}
                     >
                       <option>Not Started</option>
                       <option>In Progress</option>
@@ -953,9 +983,7 @@ export default function PlannerScheduleTable({
 
                   <td className="px-1 py-1.5 align-top">
                     {topFix ? (
-                      <div
-                        title={`${topFix.message} Quick fix: ${topFix.fix}`}
-                      >
+                      <div title={`${topFix.message} Quick fix: ${topFix.fix}`}>
                         <span
                           className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-medium ${issueBadgeClass(
                             topFix.severity
@@ -1051,8 +1079,8 @@ export default function PlannerScheduleTable({
       <div className="border-t border-slate-200 bg-slate-50/60 px-3 py-2">
         <div className="grid gap-1 text-[10px] text-slate-600 md:grid-cols-4">
           <div>
-            <span className="font-medium text-slate-800">Auto-save:</span>{" "}
-            every change is applied immediately.
+            <span className="font-medium text-slate-800">Save:</span> changes
+            save after editing stops.
           </div>
 
           <div>
