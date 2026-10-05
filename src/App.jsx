@@ -1,18 +1,70 @@
-import { Routes, Route, Navigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import AppShell from "./components/layout/AppShell";
-import PortfolioPage from "./pages/PortfolioPage";
-import ProjectPage from "./pages/ProjectPage";
-import PlannerPage from "./pages/PlannerPage";
-
-import { supabase } from "./lib/supabaseClient";
 import Auth from "./components/Auth";
-import { usePlannerStore } from "./store/usePlannerStore";
+import ErrorBoundary from "./components/common/ErrorBoundary";
+import { isCloudConfigured, supabase } from "./lib/supabaseClient";
+import {
+  flushPendingCloudSave,
+  hasPendingCloudSave,
+  usePlannerStore,
+} from "./store/usePlannerStore";
+import { Button, FeedbackHost } from "./ui/primitives";
+
+const PortfolioPage = lazy(() => import("./pages/PortfolioPage"));
+const ProjectPage = lazy(() => import("./pages/ProjectPage"));
+const PlannerPage = lazy(() => import("./pages/PlannerPage"));
+const DataPage = lazy(() => import("./pages/DataPage"));
+const AssistantPage = lazy(() => import("./pages/AssistantPage"));
+const HelpPage = lazy(() => import("./pages/HelpPage"));
+
+const LOCAL_MODE_KEY = "pm-local-mode";
+
+function readLocalModeChoice() {
+  try {
+    return localStorage.getItem(LOCAL_MODE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeLocalModeChoice(enabled) {
+  try {
+    if (enabled) localStorage.setItem(LOCAL_MODE_KEY, "1");
+    else localStorage.removeItem(LOCAL_MODE_KEY);
+  } catch {
+    // Storage can be blocked (private mode); local mode then lasts for this tab.
+  }
+}
+
+function FullPageMessage({ children }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function PageLoading() {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600" />
+      Loading...
+    </div>
+  );
+}
 
 export default function App() {
+  const location = useLocation();
+  // Local mode: no Supabase configured, or the user chose not to sign in.
+  const [localMode, setLocalMode] = useState(
+    () => !isCloudConfigured || readLocalModeChoice()
+  );
   const [session, setSession] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(isCloudConfigured && !localMode);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState("");
 
@@ -21,45 +73,66 @@ export default function App() {
   const initializeWorkspaceForCurrentUser = usePlannerStore(
     (state) => state.initializeWorkspaceForCurrentUser
   );
-
+  const initializeLocalWorkspace = usePlannerStore(
+    (state) => state.initializeLocalWorkspace
+  );
   const clearWorkspaceForLogout = usePlannerStore(
     (state) => state.clearWorkspaceForLogout
   );
 
+  const loadWorkspaceForUser = useCallback(
+    async (userId) => {
+      try {
+        setWorkspaceLoading(true);
+        setWorkspaceError("");
+        await initializeWorkspaceForCurrentUser();
+        lastLoadedUserIdRef.current = userId;
+      } catch (error) {
+        console.error("Workspace load error:", error);
+        setWorkspaceError(
+          error?.message || "Failed to load workspace. Please refresh and try again."
+        );
+      } finally {
+        setWorkspaceLoading(false);
+        setAuthLoading(false);
+      }
+    },
+    [initializeWorkspaceForCurrentUser]
+  );
+
   useEffect(() => {
+    if (localMode) {
+      initializeLocalWorkspace();
+    }
+  }, [localMode, initializeLocalWorkspace]);
+
+  useEffect(() => {
+    if (localMode || !supabase) return undefined;
+
     let mounted = true;
 
-    async function initializeAuth() {
-      try {
-        const {
-          data: { session: currentSession },
-          error,
-        } = await supabase.auth.getSession();
-
-        if (error) {
-          throw error;
-        }
-
+    supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (error) throw error;
         if (!mounted) return;
 
-        setSession(currentSession);
+        setSession(data.session);
 
-        if (currentSession?.user?.id) {
-          await loadWorkspaceForUser(currentSession.user.id);
-        } else {
-          clearWorkspaceForLogout();
+        if (data.session?.user?.id) {
+          return loadWorkspaceForUser(data.session.user.id);
         }
-      } catch (error) {
+
+        setAuthLoading(false);
+        return undefined;
+      })
+      .catch((error) => {
         console.error("Supabase auth error:", error);
-        setWorkspaceError(error?.message || "Failed to initialize login.");
-      } finally {
         if (mounted) {
+          setWorkspaceError(error?.message || "Failed to initialize login.");
           setAuthLoading(false);
         }
-      }
-    }
-
-    initializeAuth();
+      });
 
     const {
       data: { subscription },
@@ -70,7 +143,6 @@ export default function App() {
 
       if (!nextUserId) {
         lastLoadedUserIdRef.current = "";
-        clearWorkspaceForLogout();
         setAuthLoading(false);
         setWorkspaceLoading(false);
         return;
@@ -81,10 +153,10 @@ export default function App() {
         return;
       }
 
+      // Supabase recommends not awaiting other Supabase calls inside this
+      // callback, so the workspace load runs on the next tick.
       setTimeout(() => {
-        loadWorkspaceForUser(nextUserId).catch((error) => {
-          console.error("Workspace load after auth change failed:", error);
-        });
+        loadWorkspaceForUser(nextUserId);
       }, 0);
     });
 
@@ -92,31 +164,31 @@ export default function App() {
       mounted = false;
       subscription.unsubscribe();
     };
+  }, [localMode, loadWorkspaceForUser]);
+
+  // Warn before closing the tab while a cloud save is still waiting.
+  useEffect(() => {
+    function onBeforeUnload(event) {
+      if (hasPendingCloudSave()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
-  async function loadWorkspaceForUser(userId) {
-    try {
-      setWorkspaceLoading(true);
-      setWorkspaceError("");
-
-      await initializeWorkspaceForCurrentUser();
-
-      lastLoadedUserIdRef.current = userId;
-    } catch (error) {
-      console.error("Workspace load error:", error);
-
-      setWorkspaceError(
-        error?.message ||
-          "Failed to load workspace. Please refresh and try again."
-      );
-    } finally {
-      setWorkspaceLoading(false);
-      setAuthLoading(false);
-    }
-  }
-
   async function handleLogout() {
+    if (localMode) {
+      // Leaving local mode keeps the browser data; it is there next time.
+      writeLocalModeChoice(false);
+      clearWorkspaceForLogout();
+      setLocalMode(!isCloudConfigured);
+      return;
+    }
+
     try {
+      await flushPendingCloudSave();
       lastLoadedUserIdRef.current = "";
       clearWorkspaceForLogout();
       await supabase.auth.signOut();
@@ -129,130 +201,80 @@ export default function App() {
     }
   }
 
-  if (authLoading || workspaceLoading) {
+  function handleUseLocalMode() {
+    writeLocalModeChoice(true);
+    setLocalMode(true);
+  }
+
+  if (!localMode && (authLoading || workspaceLoading)) {
     return (
-      <div style={styles.loadingPage}>
-        <div style={styles.loadingCard}>
-          {authLoading ? "Loading..." : "Loading your workspace..."}
+      <FullPageMessage>
+        <div className="flex items-center justify-center gap-3 text-sm font-medium text-slate-600">
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600" />
+          {authLoading ? "Signing you in..." : "Loading your workspace..."}
         </div>
-      </div>
+      </FullPageMessage>
     );
   }
 
-  if (workspaceError) {
+  if (!localMode && workspaceError) {
     return (
-      <div style={styles.loadingPage}>
-        <div style={styles.errorCard}>
-          <h3 style={styles.errorTitle}>Workspace Load Failed</h3>
-
-          <p style={styles.errorText}>{workspaceError}</p>
-
-          <button
-            type="button"
+      <FullPageMessage>
+        <h1 className="text-lg font-semibold text-slate-900">We couldn't load your workspace</h1>
+        <p className="mt-2 text-sm text-slate-600">{workspaceError}</p>
+        <div className="mt-5 flex justify-center gap-2">
+          <Button
+            variant="primary"
             onClick={() => {
               const userId = session?.user?.id || "";
-
-              if (userId) {
-                loadWorkspaceForUser(userId);
-              } else {
-                setWorkspaceError("");
-                setAuthLoading(false);
-                setWorkspaceLoading(false);
-              }
+              if (userId) loadWorkspaceForUser(userId);
+              else setWorkspaceError("");
             }}
-            style={styles.retryButton}
           >
-            Retry
-          </button>
-
-          <button type="button" onClick={handleLogout} style={styles.logoutButton}>
-            Logout
-          </button>
+            Try again
+          </Button>
+          <Button onClick={handleLogout}>Sign out</Button>
         </div>
-      </div>
+      </FullPageMessage>
     );
   }
 
-  if (!session) {
-    return <Auth />;
+  if (!localMode && !session) {
+    return (
+      <>
+        <Auth onUseLocalMode={handleUseLocalMode} />
+        <FeedbackHost />
+      </>
+    );
   }
 
+  const effectiveSession = localMode
+    ? { user: { id: "local", email: "" } }
+    : session;
+
   return (
-    <AppShell session={session} onLogout={handleLogout}>
-      <Routes>
-        <Route path="/" element={<PortfolioPage session={session} />} />
-
-        <Route
-          path="/project/:projectId"
-          element={<ProjectPage session={session} />}
-        />
-
-        <Route path="/planner" element={<PlannerPage session={session} />} />
-
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AppShell>
+    <>
+      <AppShell
+        session={effectiveSession}
+        localMode={localMode}
+        canSignIn={isCloudConfigured}
+        onLogout={handleLogout}
+      >
+        <ErrorBoundary key={location.pathname}>
+          <Suspense fallback={<PageLoading />}>
+            <Routes>
+              <Route path="/" element={<PortfolioPage />} />
+              <Route path="/project/:projectId" element={<ProjectPage />} />
+              <Route path="/planner" element={<PlannerPage />} />
+              <Route path="/data" element={<DataPage />} />
+              <Route path="/assistant" element={<AssistantPage />} />
+              <Route path="/help" element={<HelpPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
+      </AppShell>
+      <FeedbackHost />
+    </>
   );
 }
-
-const styles = {
-  loadingPage: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#f5f6fa",
-  },
-  loadingCard: {
-    minWidth: "140px",
-    padding: "24px 32px",
-    background: "#ffffff",
-    borderRadius: "12px",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-    fontSize: "16px",
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  errorCard: {
-    width: "420px",
-    padding: "28px",
-    background: "#ffffff",
-    borderRadius: "14px",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-  },
-  errorTitle: {
-    margin: "0 0 10px",
-    fontSize: "18px",
-    fontWeight: "700",
-    color: "#111827",
-  },
-  errorText: {
-    margin: "0 0 18px",
-    fontSize: "14px",
-    lineHeight: "22px",
-    color: "#4b5563",
-  },
-  retryButton: {
-    width: "100%",
-    padding: "11px 14px",
-    border: "none",
-    borderRadius: "10px",
-    background: "#111827",
-    color: "#ffffff",
-    fontSize: "14px",
-    fontWeight: "700",
-    cursor: "pointer",
-    marginBottom: "10px",
-  },
-  logoutButton: {
-    width: "100%",
-    padding: "11px 14px",
-    border: "1px solid #d1d5db",
-    borderRadius: "10px",
-    background: "#ffffff",
-    color: "#374151",
-    fontSize: "14px",
-    fontWeight: "700",
-    cursor: "pointer",
-  },
-};

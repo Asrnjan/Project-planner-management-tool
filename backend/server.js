@@ -9,7 +9,13 @@ const xml2js = require("xml2js");
 const app = express();
 const PORT = process.env.PORT || 5050;
 
-app.use(cors());
+// Set ALLOWED_ORIGINS (comma separated) when the backend is reachable from
+// the internet; by default any origin may call it (local development).
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : true }));
 app.use(express.json({ limit: "25mb" }));
 
 const uploadDir = path.join(__dirname, "uploads");
@@ -71,32 +77,24 @@ function runMppToXmlConverter(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     const javaProjectDir = path.join(__dirname, "java-mpxj");
 
-    const javaHome =
-      "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.18.8-hotspot";
-
-    const javaExe = path.join(javaHome, "bin", "java.exe");
+    // Uses JAVA_HOME when set, otherwise `java` from PATH. Works on
+    // Windows, macOS and Linux.
+    const javaHome = process.env.JAVA_HOME || "";
+    const javaBinary = process.platform === "win32" ? "java.exe" : "java";
+    const javaExe = javaHome ? path.join(javaHome, "bin", javaBinary) : javaBinary;
 
     const targetClasses = path.join(javaProjectDir, "target", "classes");
     const dependencyDir = path.join(javaProjectDir, "target", "dependency");
 
-    if (!fs.existsSync(javaExe)) {
-      reject(new Error(`Java 17 not found at: ${javaExe}`));
+    if (javaHome && !fs.existsSync(javaExe)) {
+      reject(new Error(`Java not found at ${javaExe}. Check JAVA_HOME (Java 17+ is required).`));
       return;
     }
 
-    if (!fs.existsSync(targetClasses)) {
+    if (!fs.existsSync(targetClasses) || !fs.existsSync(dependencyDir)) {
       reject(
         new Error(
-          "Java classes not found. Run Maven compile first inside backend\\java-mpxj."
-        )
-      );
-      return;
-    }
-
-    if (!fs.existsSync(dependencyDir)) {
-      reject(
-        new Error(
-          "Dependency jars not found. Run: C:\\Tools\\apache-maven-4.0.0-rc-5\\bin\\mvn.cmd -q compile dependency:copy-dependencies inside backend\\java-mpxj."
+          "The .mpp converter is not built. Run `mvn -q compile dependency:copy-dependencies` inside backend/java-mpxj, or import MS Project XML instead (File > Save As > XML in Microsoft Project)."
         )
       );
       return;
@@ -107,7 +105,7 @@ function runMppToXmlConverter(inputPath, outputPath) {
       .filter((file) => file.toLowerCase().endsWith(".jar"))
       .map((file) => path.join(dependencyDir, file));
 
-    const classpath = [targetClasses, ...dependencyJars].join(";");
+    const classpath = [targetClasses, ...dependencyJars].join(path.delimiter);
 
     const args = [
       "-cp",
@@ -121,11 +119,7 @@ function runMppToXmlConverter(inputPath, outputPath) {
       cwd: javaProjectDir,
       shell: false,
       windowsHide: true,
-      env: {
-        ...process.env,
-        JAVA_HOME: javaHome,
-        PATH: `${path.join(javaHome, "bin")};${process.env.PATH}`,
-      },
+      env: process.env,
     });
 
     let stdout = "";
@@ -485,6 +479,38 @@ app.post("/api/export/msproject", async (req, res) => {
     res.status(500).json({
       error: error.message || "Failed to export MS Project XML.",
     });
+  }
+});
+
+// Claude endpoint for local development. In production the Netlify
+// Function in netlify/functions/ai.mjs serves the same route.
+let aiCorePromise = null;
+function loadAiCore() {
+  aiCorePromise = aiCorePromise || import("../server/ai/core.mjs");
+  return aiCorePromise;
+}
+
+app.get("/api/ai", async (_req, res) => {
+  try {
+    const { getAiStatus } = await loadAiCore();
+    res.json(getAiStatus());
+  } catch (error) {
+    res.status(500).json({ configured: false, error: error.message });
+  }
+});
+
+app.post("/api/ai", async (req, res) => {
+  try {
+    const { handleAiRequest } = await loadAiCore();
+    const { status, body } = await handleAiRequest({
+      body: req.body,
+      headers: { authorization: req.headers.authorization || "" },
+      ip: req.ip,
+    });
+    res.status(status).json(body);
+  } catch (error) {
+    console.error("AI route failed:", error);
+    res.status(500).json({ error: "AI request failed on the server." });
   }
 });
 

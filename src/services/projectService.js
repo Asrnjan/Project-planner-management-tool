@@ -1,16 +1,21 @@
 import { supabase } from "../lib/supabaseClient";
 
+// Reads the user from the locally stored session instead of calling
+// auth.getUser(), which costs a network round trip on every save. Row level
+// security on the server still checks the token on each request.
 export async function getCurrentUser() {
+  if (!supabase) return null;
+
   const {
-    data: { user },
+    data: { session },
     error,
-  } = await supabase.auth.getUser();
+  } = await supabase.auth.getSession();
 
   if (error) {
     throw error;
   }
 
-  return user;
+  return session?.user || null;
 }
 
 function isUuid(value) {

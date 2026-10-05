@@ -1,500 +1,549 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
+  AlertTriangle,
+  ArrowRightLeft,
   BriefcaseBusiness,
-  CalendarDays,
-  ClipboardPenLine,
-  Filter,
-  FolderOpen,
+  CalendarClock,
+  CheckCircle2,
+  Circle,
+  ClipboardList,
+  Copy,
+  Flag,
+  FolderPlus,
   ListChecks,
-  Plus,
+  MoreHorizontal,
+  OctagonAlert,
+  Pencil,
   Search,
-  SlidersHorizontal,
-  TrendingUp,
-  UserCircle,
+  Sparkles,
+  Trash2,
+  UserX,
+  X,
 } from "lucide-react";
 
 import CentralizedManagerReportButton from "../components/CentralizedManagerReportButton";
 import ProjectForm from "../components/projects/ProjectForm";
-import CollapsibleCard from "../components/common/AppCollapsibleCard";
+import AiInsightCard from "../components/ai/AiInsightCard";
 import { usePlannerStore } from "../store/usePlannerStore";
+import { useUiStore } from "../ui/uiStore";
+import { confirmAction, notify } from "../ui/feedback";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  Modal,
+  PageHeader,
+  ProgressBar,
+  cx,
+  inputClass,
+} from "../ui/primitives";
+import { HEALTH_TONE, computePortfolio, todayIso } from "../domain/analytics";
+import { PROJECT_STATUSES } from "../domain/vocabulary";
+import { buildSampleWorkspace } from "../data/sampleWorkspace";
 
-function PortfolioStatCard({ title, value, icon: Icon, subtitle }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+const CHECKLIST_KEY = "pm-checklist-dismissed";
+
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  const date = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function StatTile({ label, value, sub, icon: Icon, tone = "slate", to }) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700",
+    green: "bg-emerald-100 text-emerald-700",
+    red: "bg-red-100 text-red-700",
+    amber: "bg-amber-100 text-amber-700",
+    indigo: "bg-indigo-100 text-indigo-700",
+  };
+  const content = (
+    <>
       <div className="flex items-center justify-between">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-          {title}
-        </div>
-
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-          <Icon className="h-4 w-4" />
-        </div>
+        <span className="text-xs font-medium text-slate-500">{label}</span>
+        <span className={cx("flex h-8 w-8 items-center justify-center rounded-lg", tones[tone])}>
+          <Icon className="h-4 w-4" aria-hidden />
+        </span>
       </div>
+      <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{value}</div>
+      {sub ? <div className="mt-0.5 text-xs text-slate-500">{sub}</div> : null}
+    </>
+  );
+  const className = "block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition";
+  return to ? (
+    <Link to={to} className={cx(className, "hover:border-slate-300 hover:shadow")}>
+      {content}
+    </Link>
+  ) : (
+    <div className={className}>{content}</div>
+  );
+}
 
-      <div className="mt-2 text-xl font-semibold tracking-tight text-slate-900">
-        {value}
+function Onboarding() {
+  const openNewProject = useUiStore((state) => state.openNewProject);
+  const importPlannerData = usePlannerStore((state) => state.importPlannerData);
+  const navigate = useNavigate();
+
+  function loadSample() {
+    importPlannerData(buildSampleWorkspace(), { mode: "merge" });
+    notify.success("Sample projects loaded. Explore freely; you can delete them any time.");
+  }
+
+  const options = [
+    {
+      icon: FolderPlus,
+      title: "Start from scratch",
+      text: "Create a project and add tasks step by step.",
+      action: <Button variant="primary" onClick={openNewProject}>Create a project</Button>,
+    },
+    {
+      icon: ArrowRightLeft,
+      title: "Bring your existing plan",
+      text: "Excel, CSV, Jira, Asana, Trello, Monday or MS Project. Columns are matched automatically.",
+      action: <Button onClick={() => navigate("/data")}>Import a file</Button>,
+    },
+    {
+      icon: Sparkles,
+      title: "Look around first",
+      text: "Load two realistic sample projects to see every feature in action.",
+      action: <Button onClick={loadSample} data-testid="load-sample">Load sample data</Button>,
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Welcome"
+        title="Let's set up your first project"
+        description="Pick whichever start suits you. Nothing here is permanent, and the Help & Guide page explains every screen."
+      />
+      <div className="grid gap-4 md:grid-cols-3">
+        {options.map((option) => (
+          <Card key={option.title} className="flex flex-col p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+              <option.icon className="h-5 w-5" aria-hidden />
+            </div>
+            <h2 className="mt-3 text-base font-semibold text-slate-900">{option.title}</h2>
+            <p className="mt-1 flex-1 text-sm text-slate-500">{option.text}</p>
+            <div className="mt-4">{option.action}</div>
+          </Card>
+        ))}
       </div>
-
-      {subtitle ? (
-        <div className="mt-0.5 text-[11px] text-slate-500">{subtitle}</div>
-      ) : null}
     </div>
   );
 }
 
-function getProjectTaskSummary(project, tasks) {
-  const projectTasks = tasks.filter((task) => task.projectId === project.id);
+function GettingStarted({ projects, tasks }) {
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(CHECKLIST_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
-  const completed = projectTasks.filter((task) =>
-    ["Done", "Completed", "Closed"].includes(task.status)
-  ).length;
+  const steps = [
+    { label: "Create a project", done: projects.length > 0, to: null },
+    { label: "Add at least 3 tasks", done: tasks.length >= 3, to: "/planner?tab=schedule" },
+    { label: "Give tasks start and due dates", done: tasks.some((t) => t.plannedStart && t.plannedEnd), to: "/planner?tab=schedule" },
+    { label: "Assign tasks to people", done: tasks.some((t) => t.owner), to: "/planner?tab=board" },
+    { label: "Look at the timeline", done: false, to: "/planner?tab=timeline", optional: true },
+  ];
+  const required = steps.filter((step) => !step.optional);
+  const doneCount = required.filter((step) => step.done).length;
 
-  const inProgress = projectTasks.filter((task) =>
-    ["In Progress", "Ongoing"].includes(task.status)
-  ).length;
+  if (dismissed || doneCount === required.length) return null;
 
-  const blocked = projectTasks.filter((task) =>
-    ["Blocked", "On Hold"].includes(task.status)
-  ).length;
-
-  const milestones = projectTasks.filter((task) => task.isMilestone).length;
-
-  const progress = projectTasks.length
-    ? Math.round((completed / projectTasks.length) * 100)
-    : 0;
-
-  return {
-    total: projectTasks.length,
-    completed,
-    inProgress,
-    blocked,
-    milestones,
-    progress,
-  };
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">Getting started</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {doneCount} of {required.length} done. These steps get the most out of the planner.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setDismissed(true);
+            try {
+              localStorage.setItem(CHECKLIST_KEY, "1");
+            } catch {
+              // ignore blocked storage
+            }
+          }}
+          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Hide getting started checklist"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {steps.map((step) => {
+          const Icon = step.done ? CheckCircle2 : Circle;
+          const body = (
+            <span className="flex items-center gap-2">
+              <Icon className={cx("h-4 w-4 shrink-0", step.done ? "text-emerald-600" : "text-slate-300")} aria-hidden />
+              <span className={step.done ? "text-slate-400 line-through" : "text-slate-700"}>{step.label}</span>
+            </span>
+          );
+          return (
+            <li key={step.label} className="rounded-xl bg-slate-50 px-3 py-2 text-sm">
+              {step.to && !step.done ? (
+                <Link to={step.to} className="hover:underline">
+                  {body}
+                </Link>
+              ) : (
+                body
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
 }
 
-function statusClass(status) {
-  if (status === "Completed") return "bg-emerald-100 text-emerald-700";
-  if (status === "On Hold") return "bg-amber-100 text-amber-700";
-  if (status === "At Risk") return "bg-red-100 text-red-700";
-  if (status === "Delayed") return "bg-red-100 text-red-700";
-  if (status === "Planned") return "bg-slate-100 text-slate-700";
-  return "bg-blue-100 text-blue-700";
+const ATTENTION_META = {
+  overdue: { icon: OctagonAlert, tone: "red", label: (item) => `${item.days} day${item.days === 1 ? "" : "s"} overdue` },
+  blocked: { icon: AlertTriangle, tone: "amber", label: () => "Blocked" },
+  unassigned: { icon: UserX, tone: "violet", label: () => "Due soon, no owner" },
+};
+
+function NeedsAttention({ items }) {
+  const navigate = useNavigate();
+
+  return (
+    <Card>
+      <CardHeader
+        title="Needs attention"
+        subtitle={items.length ? "Late, blocked or unowned work across all projects" : "Nothing urgent right now"}
+        icon={AlertTriangle}
+      />
+      <ul className="mt-3 max-h-[340px] divide-y divide-slate-100 overflow-y-auto px-2 pb-2">
+        {items.length === 0 ? (
+          <li className="flex items-center gap-2 px-3 py-6 text-sm text-slate-500">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" /> All tasks are on schedule and have owners.
+          </li>
+        ) : (
+          items.slice(0, 12).map((item) => {
+            const meta = ATTENTION_META[item.kind];
+            return (
+              <li key={`${item.kind}-${item.task.id}`}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      `/planner?projectId=${encodeURIComponent(item.task.projectId)}&tab=schedule&taskId=${encodeURIComponent(item.task.id)}`
+                    )
+                  }
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-slate-50"
+                >
+                  <meta.icon
+                    className={cx(
+                      "h-4 w-4 shrink-0",
+                      meta.tone === "red" ? "text-red-600" : meta.tone === "amber" ? "text-amber-600" : "text-violet-600"
+                    )}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-slate-900">{item.task.title}</span>
+                    <span className="block truncate text-xs text-slate-500">
+                      {item.projectName}
+                      {item.task.owner ? ` · ${item.task.owner}` : ""}
+                    </span>
+                  </span>
+                  <Badge tone={meta.tone}>{meta.label(item)}</Badge>
+                </button>
+              </li>
+            );
+          })
+        )}
+      </ul>
+    </Card>
+  );
 }
 
-function ProjectDashboardCard({ project, tasks, onDelete, onUpdate }) {
-  const [editing, setEditing] = useState(false);
-  const taskSummary = getProjectTaskSummary(project, tasks);
+function ProjectCard({ project, metrics, onEdit }) {
+  const deleteProject = usePlannerStore((state) => state.deleteProject);
+  const duplicateProject = usePlannerStore((state) => state.duplicateProject);
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  function handleDelete() {
-    const confirmed = window.confirm(
-      `Delete "${project.name}" and all related tasks? This cannot be undone.`
-    );
-
-    if (confirmed) {
-      onDelete(project.id);
+  async function handleDelete() {
+    setMenuOpen(false);
+    const ok = await confirmAction({
+      title: `Delete "${project.name}"?`,
+      message: `This removes the project and its ${metrics.total + metrics.summaryRows} tasks, sprints, reports and documents. This cannot be undone.`,
+      confirmLabel: "Delete project",
+    });
+    if (ok) {
+      deleteProject(project.id);
+      notify.success(`"${project.name}" deleted.`);
     }
   }
 
-  function handleUpdate(updatedProject) {
-    onUpdate(project.id, updatedProject);
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <div className="rounded-3xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
-        <div className="mb-4">
-          <h3 className="text-base font-semibold tracking-tight text-slate-900">
-            Edit Project
-          </h3>
-
-          <p className="mt-1 text-xs text-slate-600">
-            Update project name, owner, status, dates, and description.
-          </p>
-        </div>
-
-        <ProjectForm
-          initialValue={project}
-          onSubmit={handleUpdate}
-          onCancel={() => setEditing(false)}
-          submitLabel="Save Changes"
-        />
-      </div>
-    );
-  }
+  const tone = HEALTH_TONE[metrics.health.level];
+  const href = `/planner?projectId=${encodeURIComponent(project.id)}&tab=overview`;
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <Card className="relative flex flex-col p-5 transition hover:shadow-md" data-testid="project-card">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold tracking-tight text-slate-900">
-            {project.name}
-          </h3>
-
+        <Link to={href} className="min-w-0 flex-1">
+          <h3 className="truncate text-base font-semibold text-slate-900 hover:text-indigo-700">{project.name}</h3>
           <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
-            {project.description || "No description added."}
+            {project.description || "No description yet."}
           </p>
-        </div>
-
-        <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusClass(
-            project.status
-          )}`}
-        >
-          {project.status || "Active"}
-        </span>
-      </div>
-
-      <div className="mt-4 grid grid-cols-4 gap-2 text-center text-[11px]">
-        <div className="rounded-2xl bg-slate-50 px-2 py-2">
-          <div className="font-semibold text-slate-900">
-            {taskSummary.total}
-          </div>
-          <div className="text-slate-500">Tasks</div>
-        </div>
-
-        <div className="rounded-2xl bg-slate-50 px-2 py-2">
-          <div className="font-semibold text-slate-900">
-            {taskSummary.inProgress}
-          </div>
-          <div className="text-slate-500">Active</div>
-        </div>
-
-        <div className="rounded-2xl bg-slate-50 px-2 py-2">
-          <div className="font-semibold text-slate-900">
-            {taskSummary.completed}
-          </div>
-          <div className="text-slate-500">Done</div>
-        </div>
-
-        <div className="rounded-2xl bg-slate-50 px-2 py-2">
-          <div className="font-semibold text-slate-900">
-            {taskSummary.blocked}
-          </div>
-          <div className="text-slate-500">Blocked</div>
+        </Link>
+        <div className="relative flex items-center gap-1">
+          <Badge tone={tone}>{metrics.health.label}</Badge>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label={`More actions for ${project.name}`}
+            aria-expanded={menuOpen}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+          {menuOpen ? (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} aria-hidden />
+              <div className="absolute right-0 top-8 z-20 w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                <button type="button" onClick={() => { setMenuOpen(false); onEdit(project); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <Pencil className="h-4 w-4" /> Edit details
+                </button>
+                <button type="button" onClick={() => { setMenuOpen(false); duplicateProject(project.id); notify.success(`Copied "${project.name}".`); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <Copy className="h-4 w-4" /> Duplicate
+                </button>
+                <button type="button" onClick={handleDelete} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-700 hover:bg-red-50">
+                  <Trash2 className="h-4 w-4" /> Delete
+                </button>
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
 
       <div className="mt-4">
-        <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500">
-          <span>Completion</span>
-          <span>{taskSummary.progress}%</span>
+        <div className="mb-1 flex justify-between text-xs text-slate-500">
+          <span>{metrics.percentComplete}% complete</span>
+          <span>{metrics.percentPlanned}% planned by today</span>
         </div>
+        <ProgressBar
+          value={metrics.percentComplete}
+          tone={tone === "red" ? "red" : tone === "amber" ? "amber" : tone === "green" ? "green" : "indigo"}
+          label={`${project.name} progress`}
+        />
+      </div>
 
-        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-slate-900"
-            style={{ width: `${taskSummary.progress}%` }}
-          />
+      <dl className="mt-4 grid grid-cols-4 gap-2 text-center text-xs">
+        {[
+          ["Tasks", metrics.total],
+          ["Active", metrics.inProgress],
+          ["Late", metrics.overdue],
+          ["Blocked", metrics.blocked],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl bg-slate-50 py-2">
+            <dd className={cx("font-semibold", (label === "Late" || label === "Blocked") && value ? "text-red-600" : "text-slate-900")}>{value}</dd>
+            <dt className="text-slate-500">{label}</dt>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-4 space-y-1.5 text-xs text-slate-600">
+        <div className="flex items-center gap-2">
+          <CalendarClock className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+          Target {formatDate(project.targetEndDate)}
+          {metrics.slipDays > 0 ? <Badge tone="red">forecast +{metrics.slipDays}d</Badge> : null}
+        </div>
+        {metrics.nextMilestone ? (
+          <div className="flex items-center gap-2">
+            <Flag className="h-3.5 w-3.5 text-violet-500" aria-hidden />
+            <span className="truncate">
+              Next milestone: {metrics.nextMilestone.title} ({formatDate(metrics.nextMilestone.date)})
+            </span>
+          </div>
+        ) : null}
+        <div className="text-slate-400">
+          {project.owner ? `Owner: ${project.owner} · ` : ""}
+          {project.status}
         </div>
       </div>
 
-      <div className="mt-4 grid gap-2 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">
-        <div className="inline-flex items-center gap-2">
-          <UserCircle className="h-4 w-4 text-slate-400" />
-          <span className="font-medium text-slate-800">Owner:</span>
-          <span>{project.owner || "Not assigned"}</span>
-        </div>
-
-        <div className="inline-flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-slate-400" />
-          <span className="font-medium text-slate-800">Timeline:</span>
-          <span>
-            {project.startDate || "-"} to {project.targetEndDate || "-"}
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex gap-2">
         <Link
-          to={`/project/${project.id}`}
-          className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+          to={href}
+          className="inline-flex flex-1 items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
         >
-          Open Workspace
+          Open
         </Link>
-
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-        >
-          Edit
-        </button>
-
         <Link
-          to={`/planner?projectId=${project.id}&tab=schedule`}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          Schedule
-        </Link>
-
-        <Link
-          to={`/planner?projectId=${project.id}&tab=timeline`}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          to={`/planner?projectId=${encodeURIComponent(project.id)}&tab=timeline`}
+          className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           Timeline
         </Link>
-
-        <button
-          type="button"
-          onClick={handleDelete}
-          className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
-        >
-          Delete
-        </button>
       </div>
-    </div>
+    </Card>
   );
 }
 
 export default function PortfolioPage() {
+  const projects = usePlannerStore((state) => state.projects);
+  const tasks = usePlannerStore((state) => state.tasks);
+  const updateProject = usePlannerStore((state) => state.updateProject);
+  const openNewProject = useUiStore((state) => state.openNewProject);
   const navigate = useNavigate();
-
-  const { projects, tasks, addProject, updateProject, deleteProject } =
-    usePlannerStore();
 
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [sortBy, setSortBy] = useState("updated");
+  const [sortBy, setSortBy] = useState("health");
+  const [editing, setEditing] = useState(null);
 
-  const totalProjects = projects.length;
-  const totalTasks = tasks.length;
+  const today = todayIso();
+  const portfolio = useMemo(() => computePortfolio(projects, tasks, today), [projects, tasks, today]);
 
-  const completedTasks = tasks.filter((task) =>
-    ["Done", "Completed", "Closed"].includes(task.status)
-  ).length;
-
-  const activeProjects = projects.filter(
-    (project) => project.status === "Active"
-  ).length;
-
-  const overallCompletion = totalTasks
-    ? Math.round((completedTasks / totalTasks) * 100)
-    : 0;
-
-  const filteredProjects = useMemo(() => {
+  const visible = useMemo(() => {
     const query = searchText.trim().toLowerCase();
-
-    let result = projects.filter((project) => {
+    const healthRank = { off: 0, risk: 1, good: 2, empty: 3, done: 4 };
+    const list = portfolio.perProject.filter(({ project }) => {
       const matchesSearch =
         !query ||
-        project.name?.toLowerCase().includes(query) ||
-        project.owner?.toLowerCase().includes(query) ||
-        project.description?.toLowerCase().includes(query);
-
-      const matchesStatus =
-        statusFilter === "All" || project.status === statusFilter;
-
-      return matchesSearch && matchesStatus;
+        [project.name, project.owner, project.description].some((value) =>
+          String(value || "").toLowerCase().includes(query)
+        );
+      return matchesSearch && (statusFilter === "All" || project.status === statusFilter);
     });
 
-    if (sortBy === "name") {
-      result = [...result].sort((a, b) =>
-        String(a.name || "").localeCompare(String(b.name || ""))
-      );
-    }
+    const sorters = {
+      health: (a, b) => healthRank[a.metrics.health.level] - healthRank[b.metrics.health.level],
+      name: (a, b) => a.project.name.localeCompare(b.project.name),
+      end: (a, b) => String(a.project.targetEndDate || "9999").localeCompare(String(b.project.targetEndDate || "9999")),
+      updated: (a, b) => String(b.project.updatedAt || "").localeCompare(String(a.project.updatedAt || "")),
+    };
+    return [...list].sort(sorters[sortBy]);
+  }, [portfolio, searchText, statusFilter, sortBy]);
 
-    if (sortBy === "status") {
-      result = [...result].sort((a, b) =>
-        String(a.status || "").localeCompare(String(b.status || ""))
-      );
-    }
-
-    if (sortBy === "startDate") {
-      result = [...result].sort((a, b) =>
-        String(a.startDate || "").localeCompare(String(b.startDate || ""))
-      );
-    }
-
-    if (sortBy === "updated") {
-      result = [...result].sort((a, b) =>
-        String(b.updatedAt || b.createdAt || "").localeCompare(
-          String(a.updatedAt || a.createdAt || "")
-        )
-      );
-    }
-
-    return result;
-  }, [projects, searchText, statusFilter, sortBy]);
-
-  function handleOpenPlanner() {
-    navigate("/planner?tab=schedule");
+  if (projects.length === 0) {
+    return <Onboarding />;
   }
 
-  function handleCreateProjectClick() {
-    const target = document.getElementById("create-project");
-
-    if (target) {
-      target.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }
-  }
+  const { healthCounts } = portfolio;
 
   return (
-    <div className="space-y-3">
-      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                <BriefcaseBusiness className="h-4 w-4" />
-              </div>
-
-              <div>
-                <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-                  Project Portfolio
-                </h2>
-
-                <div className="mt-0.5 text-xs text-slate-500">
-                  {totalProjects} projects • {totalTasks} tasks •{" "}
-                  {overallCompletion}% completion
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow={new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+        title={`${greeting()}`}
+        description={`${portfolio.activeProjects} active project${portfolio.activeProjects === 1 ? "" : "s"} · ${healthCounts.good} on track · ${healthCounts.risk} at risk · ${healthCounts.off} off track`}
+        actions={
+          <>
             <CentralizedManagerReportButton />
+            <Button icon={Sparkles} variant="ai" onClick={() => navigate("/assistant")}>
+              Ask Claude
+            </Button>
+            <Button icon={FolderPlus} variant="primary" onClick={openNewProject}>
+              New project
+            </Button>
+          </>
+        }
+      />
 
-            <button
-              type="button"
-              onClick={handleOpenPlanner}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
-            >
-              <ClipboardPenLine className="h-4 w-4" />
-              Open Planner
-            </button>
+      <GettingStarted projects={projects} tasks={tasks} />
 
-            <button
-              type="button"
-              onClick={handleCreateProjectClick}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              <Plus className="h-4 w-4" />
-              New Project
-            </button>
-          </div>
-        </div>
-      </section>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
+        <StatTile label="Projects" value={portfolio.projectCount} sub={`${portfolio.activeProjects} active`} icon={BriefcaseBusiness} tone="indigo" />
+        <StatTile label="Tasks done" value={`${portfolio.percentDone}%`} sub={`${portfolio.done} of ${portfolio.totalTasks}`} icon={ListChecks} tone="green" />
+        <StatTile label="Overdue" value={portfolio.overdue} sub="Past their due date" icon={OctagonAlert} tone={portfolio.overdue ? "red" : "slate"} />
+        <StatTile label="Blocked" value={portfolio.blocked} sub="Waiting on something" icon={AlertTriangle} tone={portfolio.blocked ? "amber" : "slate"} to="/planner?tab=board" />
+        <StatTile label="Due in 7 days" value={portfolio.dueSoon} sub={`${portfolio.unassigned} open tasks unassigned`} icon={ClipboardList} tone="slate" />
+      </div>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <PortfolioStatCard
-          title="Projects"
-          value={totalProjects}
-          icon={BriefcaseBusiness}
-          subtitle={`${activeProjects} active`}
-        />
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+        <NeedsAttention items={portfolio.attention} />
+        <AiInsightCard scope="portfolio" />
+      </div>
 
-        <PortfolioStatCard
-          title="Active"
-          value={activeProjects}
-          icon={FolderOpen}
-          subtitle="Currently running"
-        />
-
-        <PortfolioStatCard
-          title="Tasks"
-          value={totalTasks}
-          icon={ListChecks}
-          subtitle={`${completedTasks} completed`}
-        />
-
-        <PortfolioStatCard
-          title="Completion"
-          value={`${overallCompletion}%`}
-          icon={TrendingUp}
-          subtitle={totalTasks ? "Across all tasks" : "No tasks yet"}
-        />
-      </section>
-
-      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto] xl:min-w-[720px]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-
+      <section aria-labelledby="projects-heading" className="space-y-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h2 id="projects-heading" className="text-base font-semibold text-slate-900">
+            Projects <span className="text-sm font-normal text-slate-500">({visible.length} of {projects.length})</span>
+          </h2>
+          <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_auto_auto]">
+            <label className="relative">
+              <span className="sr-only">Search projects</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
               <input
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Search project, owner, or description..."
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+                placeholder="Search projects..."
+                className={cx(inputClass, "pl-9")}
               />
-            </div>
-
-            <div className="relative">
-              <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-8 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
-              >
-                <option value="All">All Status</option>
-                <option value="Planned">Planned</option>
-                <option value="Active">Active</option>
-                <option value="On Track">On Track</option>
-                <option value="At Risk">At Risk</option>
-                <option value="Delayed">Delayed</option>
-                <option value="On Hold">On Hold</option>
-                <option value="Completed">Completed</option>
-                <option value="Archived">Archived</option>
+            </label>
+            <label>
+              <span className="sr-only">Filter by status</span>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className={inputClass}>
+                <option value="All">All statuses</option>
+                {PROJECT_STATUSES.map((status) => (
+                  <option key={status}>{status}</option>
+                ))}
               </select>
-            </div>
-
-            <div className="relative">
-              <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-
-              <select
-                value={sortBy}
-                onChange={(event) => setSortBy(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-8 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
-              >
-                <option value="updated">Recently Updated</option>
-                <option value="name">Project Name</option>
-                <option value="status">Status</option>
-                <option value="startDate">Start Date</option>
+            </label>
+            <label>
+              <span className="sr-only">Sort projects</span>
+              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className={inputClass}>
+                <option value="health">Sort: needs attention first</option>
+                <option value="end">Sort: target date</option>
+                <option value="name">Sort: name</option>
+                <option value="updated">Sort: recently updated</option>
               </select>
-            </div>
-          </div>
-
-          <div className="text-xs font-medium text-slate-500">
-            Showing {filteredProjects.length} of {projects.length} projects
+            </label>
           </div>
         </div>
-      </section>
 
-      <div id="create-project">
-        <CollapsibleCard
-          title="Create Project"
-          subtitle="Open only when you want to add a new project."
-          defaultOpen={false}
-        >
-          <ProjectForm onSubmit={addProject} />
-        </CollapsibleCard>
-      </div>
-
-      <section className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-        {filteredProjects.map((project) => (
-          <ProjectDashboardCard
-            key={project.id}
-            project={project}
-            tasks={tasks}
-            onUpdate={updateProject}
-            onDelete={deleteProject}
-          />
-        ))}
-
-        {filteredProjects.length === 0 && (
-          <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm lg:col-span-2 2xl:col-span-3">
-            No matching projects found. Adjust your search/filter or create a
-            new project.
+        {visible.length === 0 ? (
+          <EmptyState
+            icon={Search}
+            title="No projects match"
+            description="Try a different search or status filter."
+          >
+            <Button onClick={() => { setSearchText(""); setStatusFilter("All"); }}>Clear filters</Button>
+          </EmptyState>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+            {visible.map(({ project, metrics }) => (
+              <ProjectCard key={project.id} project={project} metrics={metrics} onEdit={setEditing} />
+            ))}
           </div>
         )}
       </section>
+
+      <Modal open={Boolean(editing)} onClose={() => setEditing(null)} title="Edit project">
+        {editing ? (
+          <ProjectForm
+            initialValue={editing}
+            submitLabel="Save changes"
+            onCancel={() => setEditing(null)}
+            onSubmit={(values) => {
+              updateProject(editing.id, values);
+              setEditing(null);
+              notify.success("Project updated.");
+            }}
+          />
+        ) : null}
+      </Modal>
     </div>
   );
 }

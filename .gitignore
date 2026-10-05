@@ -34,3 +34,11 @@ dist-ssr
 # Java build output (rebuild with Maven, see README)
 backend/java-mpxj/target/
 backend/java-mpxj/classpath.txt
+
+# MS Project upload scratch files
+backend/uploads/
+
+# Test output
+playwright-report/
+test-results/
+coverage/

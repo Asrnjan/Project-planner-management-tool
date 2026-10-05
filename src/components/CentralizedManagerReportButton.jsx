@@ -1,6 +1,8 @@
-import React, { useState } from "react";
-import { FileText, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Loader2, Presentation } from "lucide-react";
+import { Button } from "../ui/primitives";
 import { usePlannerStore } from "../store/usePlannerStore";
+import { notify } from "../ui/feedback";
 import { generateCentralizedManagerPpt } from "../utils/centralizedManagerPpt";
 import {
   isCurrentUserAdmin,
@@ -43,21 +45,18 @@ export default function CentralizedManagerReportButton() {
         const expandedTasks = [];
         const expandedSprints = [];
 
+        // mapProjectRow spreads project_data onto the row, so project.tasks
+        // and project.project_data.tasks are the same list. Reading both
+        // counted every task twice.
         projects.forEach((project) => {
-          if (Array.isArray(project.tasks)) {
-            expandedTasks.push(...project.tasks);
+          const data = project.project_data || project;
+
+          if (Array.isArray(data.tasks)) {
+            expandedTasks.push(...data.tasks);
           }
 
-          if (Array.isArray(project.sprints)) {
-            expandedSprints.push(...project.sprints);
-          }
-
-          if (Array.isArray(project.project_data?.tasks)) {
-            expandedTasks.push(...project.project_data.tasks);
-          }
-
-          if (Array.isArray(project.project_data?.sprints)) {
-            expandedSprints.push(...project.project_data.sprints);
+          if (Array.isArray(data.sprints)) {
+            expandedSprints.push(...data.sprints);
           }
         });
 
@@ -90,59 +89,27 @@ export default function CentralizedManagerReportButton() {
         });
       }
 
-      if (admin) {
-        alert(
-          "Centralized PPT generated successfully and centralized report record saved."
-        );
-      } else {
-        alert("Centralized PPT generated successfully for your projects.");
-      }
+      notify.success(
+        admin
+          ? "Portfolio PowerPoint downloaded and saved to the central record."
+          : "Portfolio PowerPoint downloaded."
+      );
     } catch (error) {
       console.error("Centralized PPT generation failed:", error);
-      alert(
-        error?.message ||
-          "Failed to generate centralized PPT. Please check console for details."
-      );
+      notify.error(error?.message || "Could not create the PowerPoint. Please try again.");
     } finally {
       setIsGenerating(false);
     }
   }
 
   return (
-    <button
-      type="button"
+    <Button
       onClick={handleGeneratePpt}
       disabled={isGenerating}
-      style={{
-        ...styles.button,
-        cursor: isGenerating ? "not-allowed" : "pointer",
-        opacity: isGenerating ? 0.75 : 1,
-      }}
+      icon={isGenerating ? Loader2 : Presentation}
+      title="Download a PowerPoint summarising every project"
     >
-      {isGenerating ? (
-        <Loader2 size={16} className="animate-spin" />
-      ) : (
-        <FileText size={16} />
-      )}
-
-      {isGenerating ? "Generating PPT..." : "Generate Centralized PPT"}
-    </button>
+      {isGenerating ? "Building slides..." : "Portfolio slides"}
+    </Button>
   );
 }
-
-const styles = {
-  button: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
-    border: "1px solid #111827",
-    background: "#111827",
-    color: "#ffffff",
-    borderRadius: "12px",
-    padding: "10px 14px",
-    fontSize: "13px",
-    fontWeight: "700",
-    boxShadow: "0 10px 20px rgba(17,24,39,0.15)",
-    whiteSpace: "nowrap",
-  },
-};

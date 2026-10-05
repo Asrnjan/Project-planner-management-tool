@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import AiDraftReportButton from "../ai/AiDraftReportButton";
+import { confirmAction } from "../../ui/feedback";
 import {
   AlertTriangle,
   BarChart3,
@@ -1310,6 +1312,14 @@ export default function WeeklyCeoReportView({
     setMessage("Planner metrics applied and status recalculated.");
   }
 
+  // A new report starts from the project's live numbers, so the status is
+  // not shown as "Green" before any metrics have been applied.
+  useEffect(() => {
+    if (!editingReportId) applyPlannerMetrics();
+    // Only when the project changes, not on every task edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProject?.id]);
+
   function resetForm() {
     setForm({
       ...EMPTY_FORM,
@@ -1474,14 +1484,34 @@ export default function WeeklyCeoReportView({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={applyPlannerMetrics}
-              className="inline-flex w-fit items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              <CalendarDays className="h-3.5 w-3.5" />
-              Use Planner Metrics
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <AiDraftReportButton
+                project={selectedProject}
+                previousReport={projectReports[0]}
+                onDraft={(draft) => {
+                  applyPlannerMetrics();
+                  setForm((current) => ({
+                    ...current,
+                    executiveSummary: draft.executiveSummary || current.executiveSummary,
+                    achievements: draft.achievements || current.achievements,
+                    nextWeekPlan: draft.nextWeekPlan || current.nextWeekPlan,
+                    risks: draft.risks || current.risks,
+                    issues: draft.issues || current.issues,
+                    mitigationPlan: draft.mitigationPlan || current.mitigationPlan,
+                    overallHealthNotes: current.overallHealthNotes || `Claude assessment: ${draft.overallStatus}, confidence ${draft.confidenceLevel}.`,
+                  }));
+                  setMessage("Claude drafted the summary, achievements, plan, risks and mitigation. Edit anything before submitting.");
+                }}
+              />
+              <button
+                type="button"
+                onClick={applyPlannerMetrics}
+                className="inline-flex w-fit items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                Use Planner Metrics
+              </button>
+            </div>
           </div>
 
           {message ? (
@@ -2234,14 +2264,13 @@ export default function WeeklyCeoReportView({
 
                     <button
                       type="button"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            "Are you sure you want to delete this weekly report?"
-                          )
-                        ) {
-                          onDeleteReport(report.id);
-                        }
+                      onClick={async () => {
+                        const ok = await confirmAction({
+                          title: "Delete this weekly report?",
+                          message: "The report will be removed permanently.",
+                          confirmLabel: "Delete report",
+                        });
+                        if (ok) onDeleteReport(report.id);
                       }}
                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
                     >
