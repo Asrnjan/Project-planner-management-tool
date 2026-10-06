@@ -511,7 +511,10 @@ app.listen(PORT, () => {
   } else if (!apiKey.startsWith("sk-ant-")) {
     console.log("Claude: key found but it doesn't start with sk-ant- (check for quotes or a copy mistake)");
   } else {
-    console.log(`Claude: ON (model ${process.env.AI_MODEL || "claude-opus-5-5"})`);
+    const workspace = (process.env.ANTHROPIC_WORKSPACE_ID || "").trim();
+    console.log(
+      `Claude: ON (model ${process.env.AI_MODEL || "claude-opus-5-5"}${workspace ? `, workspace ${workspace}` : ""})`
+    );
   }
 
   // Prepare the converter in the background so the first .mpp import is fast.

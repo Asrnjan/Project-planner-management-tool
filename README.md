@@ -66,6 +66,7 @@ The key is only read by the backend and never reaches the browser.
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | build | Sign-in and cloud sync. Leave empty for local mode only. |
 | `VITE_MSPROJECT_BACKEND_URL` | build | Only if the converter is hosted on another domain. Locally it is reached through the dev proxy. |
 | `ANTHROPIC_API_KEY` | server | Enables Claude. Never exposed to browsers. |
+| `ANTHROPIC_WORKSPACE_ID` | server | Only for organisation-level keys that aren't tied to a workspace (Console → Settings → Workspaces). |
 | `AI_MODEL` | server | Default `claude-opus-5-5`. |
 | `AI_EFFORT` | server | Default `low` (cheapest). `medium`/`high` for deeper analysis. |
 | `AI_RATE_LIMIT_PER_10_MIN`, `AI_DAILY_LIMIT` | server | Per-user limits. Defaults 20 and 200. |

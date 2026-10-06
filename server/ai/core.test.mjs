@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AI_TASKS,
   buildRequestParams,
+  createAnthropicClient,
   checkRateLimit,
   handleAiRequest,
   resetAiStateForTests,
@@ -142,6 +143,33 @@ describe("handleAiRequest", () => {
       client,
     });
     expect(badToken.status).toBe(401);
+  });
+});
+
+describe("createAnthropicClient", () => {
+  async function capturedHeaders(env) {
+    let headers;
+    const fetchStub = async (_url, init) => {
+      headers = new Headers(init.headers);
+      return new Response(
+        JSON.stringify({ id: "m", type: "message", role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    };
+    const client = createAnthropicClient(env, { fetch: fetchStub, maxRetries: 0 });
+    await client.messages.create({ model: "claude-opus-5-5", max_tokens: 10, messages: [{ role: "user", content: "hi" }] });
+    return headers;
+  }
+
+  it("sends the workspace id when ANTHROPIC_WORKSPACE_ID is set", async () => {
+    const headers = await capturedHeaders({ ANTHROPIC_API_KEY: "k", ANTHROPIC_WORKSPACE_ID: " wrkspc_123 " });
+    expect(headers.get("anthropic-workspace-id")).toBe("wrkspc_123");
+    expect(headers.get("x-api-key")).toBe("k");
+  });
+
+  it("sends no workspace header otherwise", async () => {
+    const headers = await capturedHeaders({ ANTHROPIC_API_KEY: "k" });
+    expect(headers.get("anthropic-workspace-id")).toBeNull();
   });
 });
 

@@ -377,7 +377,7 @@ export async function handleAiRequest({ body, headers = {}, ip = "", env = proce
     return json(429, { error: limit.message, code: "rate_limited" });
   }
 
-  const anthropic = client || new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 2, timeout: 60_000 });
+  const anthropic = client || createAnthropicClient(env);
   const params = buildRequestParams(taskName, input, env);
 
   let message;
@@ -395,6 +395,13 @@ export async function handleAiRequest({ body, headers = {}, ip = "", env = proce
     }
     if (error instanceof Anthropic.BadRequestError) {
       console.error("Claude rejected the request:", error.message);
+      if (/workspace/i.test(error.message)) {
+        return json(503, {
+          error:
+            "Your Anthropic API key isn't linked to a workspace. Add ANTHROPIC_WORKSPACE_ID to the server settings (.env), or create a new key inside a workspace in the Anthropic Console.",
+          code: "workspace_required",
+        });
+      }
       return json(502, { error: "Claude could not process this request.", code: "bad_request" });
     }
     if (error instanceof Anthropic.APIError) {
@@ -439,6 +446,21 @@ export async function handleAiRequest({ body, headers = {}, ip = "", env = proce
 
   writeCache(cacheKey, payload);
   return json(200, { ...payload, cached: false });
+}
+
+/**
+ * Organisation-level API keys must name a workspace on every request;
+ * ANTHROPIC_WORKSPACE_ID (Console > Settings > Workspaces) supplies it.
+ */
+export function createAnthropicClient(env = process.env, options = {}) {
+  const workspaceId = (env.ANTHROPIC_WORKSPACE_ID || "").trim();
+  return new Anthropic({
+    apiKey: env.ANTHROPIC_API_KEY,
+    maxRetries: 2,
+    timeout: 60_000,
+    defaultHeaders: workspaceId ? { "anthropic-workspace-id": workspaceId } : undefined,
+    ...options,
+  });
 }
 
 export function getAiStatus(env = process.env) {

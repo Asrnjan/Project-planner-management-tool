@@ -48,12 +48,11 @@ function quote(value) {
 
 function commandWorks(command, args) {
   try {
-    const result = spawnSync(command, args, {
-      shell: IS_WINDOWS,
-      stdio: "ignore",
-      timeout: 20_000,
-      windowsHide: true,
-    });
+    // On Windows a shell is needed to find mvn.cmd; pass one command string
+    // (passing an args array with shell: true is deprecated in Node).
+    const result = IS_WINDOWS
+      ? spawnSync([command, ...args].join(" "), { shell: true, stdio: "ignore", timeout: 20_000, windowsHide: true })
+      : spawnSync(command, args, { stdio: "ignore", timeout: 20_000 });
     return result.status === 0;
   } catch {
     return false;
@@ -98,12 +97,10 @@ function run(command, args, { cwd, timeout, env }) {
   return new Promise((resolve, reject) => {
     // Windows needs a shell to run .cmd files (mvn.cmd, mvnw.cmd).
     const useShell = IS_WINDOWS && /\.(cmd|bat)$|^mvn$/i.test(command);
-    const child = spawn(useShell ? quote(command) : command, useShell ? args.map(quote) : args, {
-      cwd,
-      env: env || process.env,
-      shell: useShell,
-      windowsHide: true,
-    });
+    const options = { cwd, env: env || process.env, windowsHide: true };
+    const child = useShell
+      ? spawn([quote(command), ...args.map(quote)].join(" "), { ...options, shell: true })
+      : spawn(command, args, options);
 
     let output = "";
     const append = (chunk) => {
