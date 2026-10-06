@@ -1,9 +1,0 @@
-**/node_modules
-**/target
-backend/uploads
-dist
-.git
-.env
-.netlify
-test-results
-playwright-report

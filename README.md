@@ -160,28 +160,9 @@ ProjectLibre `.pod`, Asta `.pp`) are converted by the backend using
 - The converted MS Project XML is parsed in the browser, so every format
   gets the same handling of hierarchy, dependencies, resources and progress.
 
-### Converter for the live site (Netlify can't run Java)
-
-The repository includes `backend/Dockerfile` and a Render blueprint
-(`render.yaml`), so the converter can run as a small free web service:
-
-1. Sign in at [render.com](https://render.com) with GitHub.
-2. **New → Blueprint**, pick this repository, and click **Apply**. Render
-   builds the image (about 5 minutes the first time).
-3. Copy the service's address, e.g. `https://project-planner-converter.onrender.com`.
-4. In Netlify, add the environment variable `VITE_MSPROJECT_BACKEND_URL` with
-   that address, then **Deploys → Trigger deploy**.
-5. If your site's address isn't `https://project-planner-prolim.netlify.app`,
-   change `ALLOWED_ORIGINS` on the Render service to it.
-
-Render's free plan sleeps after 15 minutes without use; the first import
-after that waits about a minute while it wakes up. Without a converter, the
-site asks people to save from Microsoft Project as XML (File → Save As →
-XML), which always works in the browser.
-
-Any other Docker host works too:
-`docker build -f backend/Dockerfile -t planner-converter .` from the
-repository root, then run it with `ALLOWED_ORIGINS` set to your site.
+To host the converter separately in production, deploy `backend/` to any
+Node host with Java, set `VITE_MSPROJECT_BACKEND_URL` to its URL, and set
+`ALLOWED_ORIGINS` on the backend to your site's URL.
 
 ## Testing
 
