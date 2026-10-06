@@ -65,7 +65,14 @@ export const useAccessStore = create((set, get) => ({
       return "ready";
     } catch (error) {
       console.error("Failed to load team access:", error);
-      set({ status: "error", error: error?.message || "Could not load your access." });
+      const message = String(error?.message || "");
+      const schemaMissing = /claim_membership|workspace_members|schema cache|PGRST202|does not exist/i.test(message);
+      set({
+        status: "error",
+        error: schemaMissing
+          ? "The database needs the latest setup. An administrator should run supabase/schema.sql in the Supabase SQL editor, then reload this page."
+          : message || "Could not load your access.",
+      });
       return "error";
     }
   },
