@@ -1,3 +1,4 @@
+import { isStaleReleaseError, reloadForNewRelease } from "../../lib/staleRelease";
 import { Component } from "react";
 
 // Keeps one broken screen from blanking the whole app.
@@ -12,11 +13,29 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
+    // A newer release replaced this page's code: reload instead of erroring.
+    if (isStaleReleaseError(error) && reloadForNewRelease()) return;
     console.error("Screen crashed:", error, info?.componentStack);
   }
 
   render() {
     if (!this.state.error) return this.props.children;
+
+    if (isStaleReleaseError(this.state.error)) {
+      return (
+        <div role="status" className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          <p className="font-semibold text-slate-900">Loading the latest version of the app...</p>
+          <p className="mt-1">A new version was released while this page was open.</p>
+          <button
+            type="button"
+            className="mt-4 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            onClick={() => window.location.reload()}
+          >
+            Reload now
+          </button>
+        </div>
+      );
+    }
 
     return (
       <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6">
