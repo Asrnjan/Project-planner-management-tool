@@ -13,8 +13,16 @@ export const CONVERTER_EXTENSIONS = [".mpp", ".mpt", ".mpx", ".xer", ".pmxml", "
 const XML_TIP =
   "Tip: in Microsoft Project choose File > Save As > XML Format (*.xml) and import that file instead; it needs no server.";
 
-const NOT_RUNNING =
-  "The file converter isn't running. Start the app with `npm run dev` (it starts the converter too), or run `npm run dev:backend`.";
+const IS_LOCAL_DEV =
+  typeof window !== "undefined" && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+
+// What to tell people when no converter answers. On a hosted site without a
+// converter, developer commands mean nothing to the person importing.
+const NOT_RUNNING = IS_LOCAL_DEV
+  ? "The file converter isn't running. Start the app with `npm run dev` (it starts the converter too), or run `npm run dev:backend`."
+  : API_BASE_URL
+  ? "The file converter isn't responding. If it was idle, it may take up to a minute to wake up; try again shortly."
+  : "This site can't open this file type directly yet (an administrator can enable it; see the README).";
 
 /** Reports whether the converter is available and ready. Never throws. */
 export async function getConverterStatus() {
