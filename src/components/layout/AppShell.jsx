@@ -23,6 +23,7 @@ import { cx } from "../../ui/primitives";
 import { ROLE_LABEL } from "../../domain/permissions";
 import { useAccess, useAccessStore } from "../../store/useAccessStore";
 import { useUiStore } from "../../ui/uiStore";
+import { usePlannerStore } from "../../store/usePlannerStore";
 import CommandPalette from "./CommandPalette";
 import NewProjectDialog from "../projects/NewProjectDialog";
 import QuickTaskDialog from "../tasks/QuickTaskDialog";
@@ -103,7 +104,7 @@ function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout 
   const openNewProject = useUiStore((state) => state.openNewProject);
   const openCommandPalette = useUiStore((state) => state.openCommandPalette);
   const navItems = useNavItems();
-  const { permissions, realMember } = useAccess();
+  const { permissions } = useAccess();
 
   return (
     <div className="flex h-full flex-col">
@@ -147,7 +148,7 @@ function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout 
         </button>
       </div>
 
-      <nav aria-label="Main" className="mt-4 flex-1 space-y-1 px-3">
+      <nav aria-label="Main" className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-2">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
@@ -179,46 +180,130 @@ function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout 
         ))}
       </nav>
 
-      <div className="border-t border-slate-200 p-3">
+      {/* Always visible: the menu above scrolls on short screens. */}
+      <div className="shrink-0 border-t border-slate-200 p-3">
         {localMode ? (
-          <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
+          <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
             <div className="flex items-center gap-1.5 font-semibold">
               <HardDrive className="h-3.5 w-3.5" aria-hidden /> Saved in this browser
             </div>
-            <p className="mt-1 text-amber-800">
-              Back up regularly from Import &amp; Export.
-            </p>
+            <p className="mt-0.5 text-amber-800">Back up regularly from Import &amp; Export.</p>
             {canSignIn ? (
               <button
                 type="button"
                 onClick={onLogout}
-                className="mt-2 inline-flex items-center gap-1 font-semibold text-amber-900 underline-offset-2 hover:underline"
+                className="mt-1 inline-flex items-center gap-1 font-semibold text-amber-900 underline-offset-2 hover:underline"
               >
                 <LogIn className="h-3.5 w-3.5" aria-hidden /> Sign in to sync
               </button>
             ) : null}
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
-              {(userEmail || "?").slice(0, 1)}
-            </div>
-            <div className="min-w-0 flex-1 text-xs" title={userEmail}>
-              <div className="truncate font-medium text-slate-800">{realMember?.displayName || userEmail}</div>
-              {realMember ? <div className="truncate text-slate-500">{ROLE_LABEL[realMember.role]}</div> : null}
-            </div>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="rounded-lg p-2 text-slate-500 transition hover:bg-red-50 hover:text-red-700"
-              aria-label="Sign out"
-              title="Sign out"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
+          <AccountMenu userEmail={userEmail} onLogout={onLogout} />
         )}
       </div>
+    </div>
+  );
+}
+
+function formatSignIn(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+/** Your name and role; opens your account details and Sign out. */
+function AccountMenu({ userEmail, onLogout }) {
+  const { realMember } = useAccess();
+  const projects = usePlannerStore((state) => state.projects);
+  const [open, setOpen] = useState(false);
+  const name = realMember?.displayName || userEmail.split("@")[0] || "Account";
+  const projectNames = Array.isArray(realMember?.projectIds)
+    ? projects.filter((project) => realMember.projectIds.includes(project.id)).map((project) => project.name)
+    : null;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKeyDown = (event) => event.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  return (
+    <div className="relative">
+      {open ? (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+          <div
+            role="dialog"
+            aria-label="Your account"
+            className="absolute bottom-full left-0 right-0 z-50 mb-2 rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-xl"
+            data-testid="account-menu"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold uppercase text-indigo-700">
+                {name.slice(0, 1)}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate font-semibold text-slate-900">{name}</div>
+                <div className="truncate text-xs text-slate-500">{userEmail}</div>
+              </div>
+            </div>
+            <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-3 text-xs">
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Role</dt>
+                <dd className="font-medium text-slate-800">{realMember ? ROLE_LABEL[realMember.role] : "—"}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Projects</dt>
+                <dd className="truncate text-right font-medium text-slate-800" title={projectNames?.join(", ")}>
+                  {projectNames ? (projectNames.length ? projectNames.join(", ") : "None yet") : "All projects"}
+                </dd>
+              </div>
+              {realMember?.lastSignInAt ? (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Signed in</dt>
+                  <dd className="font-medium text-slate-800">{formatSignIn(realMember.lastSignInAt)}</dd>
+                </div>
+              ) : null}
+            </dl>
+            <p className="mt-3 text-[11px] text-slate-400">
+              {realMember?.role === "admin"
+                ? "Change names and access in Admin → Users."
+                : "Ask your administrator to change your name or access."}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onLogout();
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+            >
+              <LogOut className="h-4 w-4" aria-hidden /> Sign out
+            </button>
+          </div>
+        </>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-label="Your account and sign out"
+        data-testid="account-button"
+        className="flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition hover:bg-slate-100"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold uppercase text-indigo-700">
+          {name.slice(0, 1)}
+        </span>
+        <span className="min-w-0 flex-1 text-xs">
+          <span className="block truncate font-medium text-slate-800">{name}</span>
+          <span className="block truncate text-slate-500">{realMember ? ROLE_LABEL[realMember.role] : userEmail}</span>
+        </span>
+        <LogOut className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+      </button>
     </div>
   );
 }
