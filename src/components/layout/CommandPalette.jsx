@@ -4,12 +4,14 @@ import {
   ArrowRightLeft,
   CircleHelp,
   ClipboardList,
+  Clock,
   FolderKanban,
   KanbanSquare,
   LayoutDashboard,
   ListPlus,
   Plus,
   Search,
+  ShieldCheck,
   Sparkles,
   CalendarRange,
 } from "lucide-react";
@@ -17,28 +19,43 @@ import {
 import { usePlannerStore } from "../../store/usePlannerStore";
 import { useUiStore } from "../../ui/uiStore";
 import { cx } from "../../ui/primitives";
+import { canAccessProject } from "../../domain/permissions";
+import { useAccess } from "../../store/useAccessStore";
 
 function useCommands(query) {
   const navigate = useNavigate();
-  const projects = usePlannerStore((state) => state.projects);
-  const tasks = usePlannerStore((state) => state.tasks);
+  const allProjects = usePlannerStore((state) => state.projects);
+  const allTasks = usePlannerStore((state) => state.tasks);
+  const access = useAccess();
   const openNewProject = useUiStore((state) => state.openNewProject);
   const openQuickTask = useUiStore((state) => state.openQuickTask);
 
   return useMemo(() => {
+    const visible = (projectId) => access.unrestricted || canAccessProject(access.member, projectId);
+    const projects = allProjects.filter((project) => visible(project.id));
+    const tasks = allTasks.filter((task) => visible(task.projectId));
+    const can = (permission) => Boolean(access.permissions[permission]);
     const base = [
       { id: "nav-dashboard", group: "Go to", label: "Dashboard", icon: LayoutDashboard, run: () => navigate("/") },
       { id: "nav-planner", group: "Go to", label: "Planner", icon: ClipboardList, run: () => navigate("/planner") },
       { id: "nav-timeline", group: "Go to", label: "Timeline (Gantt chart)", icon: CalendarRange, run: () => navigate("/planner?tab=timeline") },
       { id: "nav-board", group: "Go to", label: "Board (Kanban)", icon: KanbanSquare, run: () => navigate("/planner?tab=board") },
-      { id: "nav-claude", group: "Go to", label: "Ask Claude", icon: Sparkles, run: () => navigate("/assistant") },
+      can("ai.use") ? { id: "nav-claude", group: "Go to", label: "Ask Claude", icon: Sparkles, run: () => navigate("/assistant") } : null,
+      can("timesheet.log") || can("timesheet.approve") || can("timesheet.view_all")
+        ? { id: "nav-timesheet", group: "Go to", label: "Timesheet", icon: Clock, keywords: "time clock hours", run: () => navigate("/timesheet") }
+        : null,
       { id: "nav-data", group: "Go to", label: "Import & Export", icon: ArrowRightLeft, run: () => navigate("/data") },
+      can("admin.users") || can("admin.roles_rules") || can("admin.audit")
+        ? { id: "nav-admin", group: "Go to", label: "Admin: users, roles and rules", icon: ShieldCheck, keywords: "permissions access", run: () => navigate("/admin") }
+        : null,
       { id: "nav-help", group: "Go to", label: "Help & Guide", icon: CircleHelp, run: () => navigate("/help") },
-      { id: "act-project", group: "Actions", label: "Create a new project", icon: Plus, keywords: "add", run: openNewProject },
-      { id: "act-task", group: "Actions", label: "Add a task", icon: ListPlus, keywords: "new create", run: () => openQuickTask("") },
-      { id: "act-import", group: "Actions", label: "Import a file (Excel, CSV, Jira, MS Project...)", icon: ArrowRightLeft, keywords: "upload", run: () => navigate("/data") },
-      { id: "act-analyze", group: "Actions", label: "Analyse my portfolio with Claude", icon: Sparkles, keywords: "ai insights risk", run: () => navigate("/assistant") },
-    ];
+      can("projects.create") ? { id: "act-project", group: "Actions", label: "Create a new project", icon: Plus, keywords: "add", run: openNewProject } : null,
+      can("tasks.create") ? { id: "act-task", group: "Actions", label: "Add a task", icon: ListPlus, keywords: "new create", run: () => openQuickTask("") } : null,
+      can("data.import")
+        ? { id: "act-import", group: "Actions", label: "Import a file (Excel, CSV, Jira, MS Project...)", icon: ArrowRightLeft, keywords: "upload", run: () => navigate("/data") }
+        : null,
+      can("ai.use") ? { id: "act-analyze", group: "Actions", label: "Analyse my portfolio with Claude", icon: Sparkles, keywords: "ai insights risk", run: () => navigate("/assistant") } : null,
+    ].filter(Boolean);
 
     const projectCommands = projects.map((project) => ({
       id: `project-${project.id}`,
@@ -74,7 +91,7 @@ function useCommands(query) {
         .includes(q);
 
     return [...base.filter(matches), ...projectCommands.filter(matches), ...taskCommands];
-  }, [query, projects, tasks, navigate, openNewProject, openQuickTask]);
+  }, [query, allProjects, allTasks, access, navigate, openNewProject, openQuickTask]);
 }
 
 function PaletteBody({ onClose }) {

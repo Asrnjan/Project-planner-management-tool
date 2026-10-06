@@ -8,9 +8,12 @@ import { isCloudConfigured, supabase } from "./lib/supabaseClient";
 import {
   flushPendingCloudSave,
   hasPendingCloudSave,
+  pullCloudChanges,
   usePlannerStore,
 } from "./store/usePlannerStore";
+import { useAccessStore } from "./store/useAccessStore";
 import { Button, FeedbackHost } from "./ui/primitives";
+import { notify } from "./ui/feedback";
 
 const PortfolioPage = lazy(() => import("./pages/PortfolioPage"));
 const ProjectPage = lazy(() => import("./pages/ProjectPage"));
@@ -18,6 +21,8 @@ const PlannerPage = lazy(() => import("./pages/PlannerPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
 const AssistantPage = lazy(() => import("./pages/AssistantPage"));
 const HelpPage = lazy(() => import("./pages/HelpPage"));
+const TimesheetPage = lazy(() => import("./pages/TimesheetPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
 
 const LOCAL_MODE_KEY = "pm-local-mode";
 
@@ -67,6 +72,10 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(isCloudConfigured && !localMode);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState("");
+  const [noAccess, setNoAccess] = useState(false);
+  const initializeAccess = useAccessStore((state) => state.initialize);
+  const resetAccess = useAccessStore((state) => state.reset);
+  const idleSignOutMinutes = useAccessStore((state) => Number(state.rules?.security?.idleSignOutMinutes || 0));
 
   const lastLoadedUserIdRef = useRef("");
 
@@ -81,12 +90,24 @@ export default function App() {
   );
 
   const loadWorkspaceForUser = useCallback(
-    async (userId) => {
+    async (user) => {
       try {
         setWorkspaceLoading(true);
         setWorkspaceError("");
+        setNoAccess(false);
+        // Who you are in the team decides what you can see, so access loads
+        // before any project data.
+        const accessStatus = await initializeAccess("cloud", { email: user.email || "" });
+        if (accessStatus === "no_access") {
+          setNoAccess(true);
+          lastLoadedUserIdRef.current = user.id;
+          return;
+        }
+        if (accessStatus === "error") {
+          throw new Error(useAccessStore.getState().error || "Could not load your access.");
+        }
         await initializeWorkspaceForCurrentUser();
-        lastLoadedUserIdRef.current = userId;
+        lastLoadedUserIdRef.current = user.id;
       } catch (error) {
         console.error("Workspace load error:", error);
         setWorkspaceError(
@@ -97,14 +118,15 @@ export default function App() {
         setAuthLoading(false);
       }
     },
-    [initializeWorkspaceForCurrentUser]
+    [initializeWorkspaceForCurrentUser, initializeAccess]
   );
 
   useEffect(() => {
     if (localMode) {
       initializeLocalWorkspace();
+      initializeAccess("local");
     }
-  }, [localMode, initializeLocalWorkspace]);
+  }, [localMode, initializeLocalWorkspace, initializeAccess]);
 
   useEffect(() => {
     if (localMode || !supabase) return undefined;
@@ -120,7 +142,7 @@ export default function App() {
         setSession(data.session);
 
         if (data.session?.user?.id) {
-          return loadWorkspaceForUser(data.session.user.id);
+          return loadWorkspaceForUser(data.session.user);
         }
 
         setAuthLoading(false);
@@ -156,7 +178,7 @@ export default function App() {
       // Supabase recommends not awaiting other Supabase calls inside this
       // callback, so the workspace load runs on the next tick.
       setTimeout(() => {
-        loadWorkspaceForUser(nextUserId);
+        loadWorkspaceForUser(sessionData.user);
       }, 0);
     });
 
@@ -165,6 +187,40 @@ export default function App() {
       subscription.unsubscribe();
     };
   }, [localMode, loadWorkspaceForUser]);
+
+  // Bring in teammates' changes every minute and when the tab regains focus.
+  const cloudReady = !localMode && Boolean(session) && !noAccess && !workspaceLoading && !authLoading;
+  useEffect(() => {
+    if (!cloudReady) return undefined;
+    const pull = () => {
+      if (document.visibilityState === "hidden") return;
+      pullCloudChanges().catch((error) => console.warn("Could not refresh from the cloud:", error));
+    };
+    const timer = window.setInterval(pull, 60_000);
+    window.addEventListener("focus", pull);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", pull);
+    };
+  }, [cloudReady]);
+
+  // Workspace rule: sign out after a period without activity.
+  const logoutRef = useRef(null);
+  useEffect(() => {
+    if (!cloudReady || !idleSignOutMinutes) return undefined;
+    let timer = null;
+    const reset = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => logoutRef.current?.("idle"), idleSignOutMinutes * 60_000);
+    };
+    const events = ["pointerdown", "keydown", "scroll", "visibilitychange"];
+    events.forEach((name) => window.addEventListener(name, reset, { passive: true }));
+    reset();
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((name) => window.removeEventListener(name, reset));
+    };
+  }, [cloudReady, idleSignOutMinutes]);
 
   // Warn before closing the tab while a cloud save is still waiting.
   useEffect(() => {
@@ -178,7 +234,9 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
-  async function handleLogout() {
+  async function handleLogout(reason) {
+    resetAccess();
+    setNoAccess(false);
     if (localMode) {
       // Leaving local mode keeps the browser data; it is there next time.
       writeLocalModeChoice(false);
@@ -193,6 +251,9 @@ export default function App() {
       clearWorkspaceForLogout();
       await supabase.auth.signOut();
       setSession(null);
+      if (reason === "idle") {
+        notify.info("You were signed out after a period of inactivity.");
+      }
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
@@ -200,6 +261,8 @@ export default function App() {
       setWorkspaceLoading(false);
     }
   }
+
+  logoutRef.current = handleLogout;
 
   function handleUseLocalMode() {
     writeLocalModeChoice(true);
@@ -226,14 +289,32 @@ export default function App() {
           <Button
             variant="primary"
             onClick={() => {
-              const userId = session?.user?.id || "";
-              if (userId) loadWorkspaceForUser(userId);
+              if (session?.user?.id) loadWorkspaceForUser(session.user);
               else setWorkspaceError("");
             }}
           >
             Try again
           </Button>
-          <Button onClick={handleLogout}>Sign out</Button>
+          <Button onClick={() => handleLogout()}>Sign out</Button>
+        </div>
+      </FullPageMessage>
+    );
+  }
+
+  if (!localMode && session && noAccess) {
+    const email = session.user?.email || "";
+    return (
+      <FullPageMessage>
+        <h1 className="text-lg font-semibold text-slate-900">You haven't been added to this workspace yet</h1>
+        <p className="mt-2 text-sm text-slate-600">
+          You're signed in as <strong>{email}</strong>. Ask your administrator to add this email address in
+          Admin &rarr; Users, then sign in again.
+        </p>
+        <div className="mt-5 flex justify-center gap-2">
+          <Button variant="primary" onClick={() => loadWorkspaceForUser(session.user)}>
+            I've been added, try again
+          </Button>
+          <Button onClick={() => handleLogout()}>Sign out</Button>
         </div>
       </FullPageMessage>
     );
@@ -258,7 +339,7 @@ export default function App() {
         session={effectiveSession}
         localMode={localMode}
         canSignIn={isCloudConfigured}
-        onLogout={handleLogout}
+        onLogout={() => handleLogout()}
       >
         <ErrorBoundary key={location.pathname}>
           <Suspense fallback={<PageLoading />}>
@@ -268,6 +349,8 @@ export default function App() {
               <Route path="/planner" element={<PlannerPage />} />
               <Route path="/data" element={<DataPage />} />
               <Route path="/assistant" element={<AssistantPage />} />
+              <Route path="/timesheet" element={<TimesheetPage />} />
+              <Route path="/admin" element={<AdminPage />} />
               <Route path="/help" element={<HelpPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

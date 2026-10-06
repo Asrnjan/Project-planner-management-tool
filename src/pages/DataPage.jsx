@@ -15,12 +15,14 @@ import {
 } from "lucide-react";
 
 import { usePlannerStore } from "../store/usePlannerStore";
+import { useAccess, useAccessStore } from "../store/useAccessStore";
 import { confirmAction, notify } from "../ui/feedback";
 import {
   Badge,
   Button,
   Card,
   CardHeader,
+  EmptyState,
   PageHeader,
   cx,
   inputClass,
@@ -185,6 +187,9 @@ function ImportWizard() {
   const [mapping, setMapping] = useState({});
   const [dateOrder, setDateOrder] = useState("");
   const [mode, setMode] = useState("merge");
+  const access = useAccess();
+  // Replacing the whole workspace affects everyone, so it is admin-only.
+  const canReplace = access.unrestricted || access.member?.role === "admin";
   const [targetProjectId, setTargetProjectId] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
 
@@ -293,6 +298,7 @@ function ImportWizard() {
       if (!ok) return;
     }
     importPlannerData(finalData, { mode });
+    useAccessStore.getState().logEvent("import", file?.name || "", { mode, tasks: stats.tasks });
     notify.success(`Imported ${stats.tasks} tasks${stats.projects ? ` into ${stats.projects} project(s)` : ""}.`);
     const firstProjectId = targetProjectId || finalData.projects?.[0]?.id || finalData.tasks?.[0]?.projectId || "";
     setParsed(null);
@@ -374,8 +380,8 @@ function ImportWizard() {
               <div className="grid gap-3 md:grid-cols-2">
                 {[
                   { id: "merge", title: "Add to my workspace", text: "Keeps everything you have and adds the imported projects and tasks." },
-                  { id: "replace", title: "Replace my workspace", text: "Removes current projects first. Use this to restore a full backup." },
-                ].map((option) => (
+                  canReplace ? { id: "replace", title: "Replace my workspace", text: "Removes current projects first. Use this to restore a full backup." } : null,
+                ].filter(Boolean).map((option) => (
                   <label
                     key={option.id}
                     className={cx(
@@ -511,6 +517,7 @@ function ExportPanel() {
       const scoped = scopeWorkspace(workspace, scope ? [scope] : []);
       const name = scope ? state.projects.find((project) => project.id === scope)?.name : "workspace";
       exportWorkspace(scoped, formatId, name);
+      useAccessStore.getState().logEvent("export", name || "", { format: formatId });
       notify.success("Export downloaded.");
     } catch (err) {
       notify.error(err.message || "Export failed.");
@@ -562,6 +569,8 @@ function ExportPanel() {
 }
 
 function WorkspacePanel() {
+  const access = useAccess();
+  const isAdmin = access.unrestricted || access.member?.role === "admin";
   const storageMode = usePlannerStore((state) => state.storageMode);
   const projects = usePlannerStore((state) => state.projects);
   const importPlannerData = usePlannerStore((state) => state.importPlannerData);
@@ -593,7 +602,7 @@ function WorkspacePanel() {
             regularly.
           </p>
         ) : null}
-        <div className="flex flex-wrap gap-2">
+        <div className={isAdmin ? "flex flex-wrap gap-2" : "hidden"}>
           <Button
             icon={Sparkles}
             onClick={() => {
@@ -613,6 +622,16 @@ function WorkspacePanel() {
 }
 
 export default function DataPage() {
+  const { permissions } = useAccess();
+  if (!permissions["data.import"] && !permissions["data.export"]) {
+    return (
+      <EmptyState
+        icon={Info}
+        title="Import and export aren't part of your role"
+        description="Ask your administrator if you need to bring in or download data."
+      />
+    );
+  }
   return (
     <div className="space-y-6">
       <PageHeader
@@ -621,9 +640,9 @@ export default function DataPage() {
         description="Bring plans in from almost any tool, and take your data anywhere. Nothing is imported until you confirm."
       />
       <div className="grid items-start gap-6 xl:grid-cols-[1.6fr_1fr]">
-        <ImportWizard />
+        {permissions["data.import"] ? <ImportWizard /> : null}
         <div className="space-y-6">
-          <ExportPanel />
+          {permissions["data.export"] ? <ExportPanel /> : null}
           <WorkspacePanel />
         </div>
       </div>

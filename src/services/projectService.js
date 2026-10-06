@@ -128,18 +128,24 @@ export async function getCurrentUserProfile() {
 }
 
 export async function isCurrentUserAdmin() {
-  const profile = await getCurrentUserProfile();
-  return profile?.role === "admin";
+  if (!supabase) return false;
+  const { data, error } = await supabase.rpc("is_workspace_admin");
+  if (error) {
+    // Workspaces set up before team roles: fall back to the old profile role.
+    const profile = await getCurrentUserProfile();
+    return profile?.role === "admin";
+  }
+  return data === true;
 }
 
-async function findExistingProjectRow(userId, localProjectId) {
+async function findExistingProjectRow(localProjectId) {
   if (!localProjectId) return null;
 
   const { data, error } = await supabase
     .from("projects")
     .select("*")
-    .eq("user_id", userId)
     .eq("project_data->>id", localProjectId)
+    .limit(1)
     .maybeSingle();
 
   if (error) {
@@ -210,7 +216,13 @@ function projectRowContainsProjectId(row, projectId) {
   return false;
 }
 
-export async function saveProject(project) {
+/**
+ * Saves one project. With `expectedUpdatedAt`, the save only goes through if
+ * nobody else saved the project since; otherwise it returns
+ * { conflict: true, latest } with the server's current version so the
+ * caller can merge. Row level security decides who may save what.
+ */
+export async function saveProject(project, { expectedUpdatedAt = "" } = {}) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -218,54 +230,53 @@ export async function saveProject(project) {
   }
 
   const safeProjectData = makeSafeProjectData(project);
-
-  const payload = {
-    user_id: user.id,
+  const fields = {
     name: project.name || safeProjectData.name || "Untitled Project",
     description: project.description || safeProjectData.description || "",
     project_data: safeProjectData,
-    updated_at: new Date().toISOString(),
   };
 
-  const cloudId = project.cloudId || project.dbId || "";
+  let cloudId = isUuid(project.cloudId) ? project.cloudId : isUuid(project.dbId) ? project.dbId : "";
 
-  if (cloudId && isUuid(cloudId)) {
-    const { data, error } = await supabase
-      .from("projects")
-      .update(payload)
-      .eq("id", cloudId)
-      .eq("user_id", user.id)
-      .select()
-      .single();
-
-    if (error) {
-      throw error;
-    }
-
-    return mapProjectRow(data);
+  if (!cloudId) {
+    const existingRow = await findExistingProjectRow(project.id);
+    cloudId = existingRow?.id || "";
   }
 
-  const existingRow = await findExistingProjectRow(user.id, project.id);
+  if (cloudId) {
+    let query = supabase.from("projects").update(fields).eq("id", cloudId);
+    if (expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
 
-  if (existingRow?.id) {
-    const { data, error } = await supabase
-      .from("projects")
-      .update(payload)
-      .eq("id", existingRow.id)
-      .eq("user_id", user.id)
-      .select()
-      .single();
+    const { data, error } = await query.select().maybeSingle();
 
     if (error) {
       throw error;
     }
 
-    return mapProjectRow(data);
+    if (data) {
+      return { project: mapProjectRow(data), conflict: false };
+    }
+
+    const { data: latest, error: latestError } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("id", cloudId)
+      .maybeSingle();
+
+    if (latestError) {
+      throw latestError;
+    }
+
+    if (latest) {
+      return { project: null, conflict: true, latest: mapProjectRow(latest) };
+    }
+
+    throw new Error("This project was deleted or you no longer have access to it.");
   }
 
   const { data, error } = await supabase
     .from("projects")
-    .insert(payload)
+    .insert({ ...fields, user_id: user.id })
     .select()
     .single();
 
@@ -273,7 +284,7 @@ export async function saveProject(project) {
     throw error;
   }
 
-  return mapProjectRow(data);
+  return { project: mapProjectRow(data), conflict: false };
 }
 
 export async function loadProjects(options = {}) {
@@ -288,9 +299,8 @@ export async function loadProjects(options = {}) {
     .select("*")
     .order("updated_at", { ascending: false });
 
-  if (!options.allUsers) {
-    query = query.eq("user_id", user.id);
-  }
+  // Row level security returns exactly the projects this person may see.
+  void options;
 
   const { data, error } = await query;
 
@@ -338,8 +348,7 @@ export async function deleteProject(projectOrId) {
 
   const { data: rows, error: fetchError } = await supabase
     .from("projects")
-    .select("*")
-    .eq("user_id", user.id);
+    .select("*");
 
   if (fetchError) {
     throw fetchError;
@@ -365,8 +374,7 @@ export async function deleteProject(projectOrId) {
   const { error: deleteError } = await supabase
     .from("projects")
     .delete()
-    .in("id", rowsToDelete)
-    .eq("user_id", user.id);
+    .in("id", rowsToDelete);
 
   if (deleteError) {
     throw deleteError;

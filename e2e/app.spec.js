@@ -321,3 +321,126 @@ test.describe("Claude", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+test.describe("team and timesheets", () => {
+  async function setOwnName(page, name) {
+    await page.goto("/admin");
+    await page.getByRole("button", { name: /^Edit / }).first().click();
+    await page.getByLabel("Name").fill(name);
+    await page.getByRole("dialog").getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText(`${name} updated.`)).toBeVisible();
+  }
+
+  async function addMember(page, { name, email, role = "Team member", project }) {
+    await page.goto("/admin");
+    await page.getByTestId("add-member").click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Name").fill(name);
+    await dialog.getByLabel("Email").fill(email);
+    await dialog.getByText(role, { exact: true }).click();
+    if (project) {
+      await dialog.getByText("Only selected projects").click();
+      await dialog.getByRole("checkbox", { name: project }).check();
+    }
+    await dialog.getByRole("button", { name: "Add person" }).click();
+    await expect(page.getByText(`${name} added.`)).toBeVisible();
+  }
+
+  test("admin adds a member and previews exactly what they can do", async ({ page }) => {
+    const errors = trackErrors(page);
+    await loadSample(page);
+    await addMember(page, { name: "Priya Shah", email: "priya@company.com", project: "Website Relaunch" });
+    await expect(page.getByRole("row", { name: /Priya Shah/ })).toContainText("Team member");
+
+    await page.getByRole("button", { name: "Preview as Priya Shah" }).click();
+    await expect(page.getByTestId("preview-banner")).toContainText("Priya Shah");
+
+    // Only the projects she was given, and no admin or create actions.
+    await page.goto("/");
+    await expect(page.getByTestId("project-card")).toHaveCount(1);
+    await expect(page.getByTestId("project-card")).toContainText("Website Relaunch");
+    await expect(page.getByRole("link", { name: "Admin" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "New project" })).toHaveCount(0);
+
+    // Her own task's status is editable; other people's tasks are read-only.
+    await page.goto("/planner?tab=schedule");
+    await expect(page.getByTestId("add-task")).toHaveCount(0);
+    const own = page.getByRole("row").filter({ has: page.locator('input[value="Stakeholder interviews"]') });
+    const other = page.getByRole("row").filter({ has: page.locator('input[value="Sitemap & content audit"]') });
+    await expect(own.locator("select").last()).toBeEnabled();
+    await expect(own.locator('input[aria-label="Task name"]')).toHaveAttribute("readonly", "");
+    await expect(other.locator("select").last()).toBeDisabled();
+
+    await page.getByRole("button", { name: "Exit preview" }).click();
+    await expect(page.getByTestId("preview-banner")).toHaveCount(0);
+    await expect(page.getByTestId("add-task")).toBeVisible();
+    errors.assertNone();
+  });
+
+  test("tracks time, submits the week and approves it", async ({ page }) => {
+    const errors = trackErrors(page);
+    await loadSample(page);
+    await setOwnName(page, "Daniel Okafor");
+
+    await page.goto("/timesheet");
+    await page.getByTestId("clock-in").click();
+    await expect(page.getByTestId("attendance-clock")).toBeVisible();
+
+    await page.getByTestId("timer-task").selectOption({ label: "Retire spreadsheets — CRM Migration" });
+    await page.getByTestId("start-timer").click();
+    await expect(page.getByTestId("task-timer")).toBeVisible();
+    await page.getByTestId("stop-timer").click();
+    await expect(page.getByText("Time saved.")).toBeVisible();
+
+    await page.getByTestId("add-time").click();
+    await page.getByLabel("What did you work on?").fill("Cleaned the customer sheet");
+    await page.getByRole("dialog").getByRole("button", { name: "Add time" }).click();
+    await expect(page.getByTestId("week-grid")).toContainText("Retire spreadsheets");
+    await expect(page.getByTestId("week-grid")).toContainText("1h 00m");
+
+    await page.getByTestId("submit-week").click();
+    await expect(page.getByText("Sent for approval.")).toBeVisible();
+    await expect(page.getByText("Waiting for approval").first()).toBeVisible();
+
+    await page.getByRole("tab", { name: "Approvals" }).click();
+    await expect(page.getByText("Cleaned the customer sheet")).toBeVisible();
+    await page.getByTestId("approve-time").click();
+    await expect(page.getByText(/Approved 2 entries/)).toBeVisible();
+
+    await page.getByRole("tab", { name: "My time" }).click();
+    await expect(page.getByText("Approved", { exact: true }).first()).toBeVisible();
+    errors.assertNone();
+  });
+
+  test("role permissions and rules change what people can do", async ({ page }) => {
+    await loadSample(page);
+    await addMember(page, { name: "Leo Martins", email: "leo@company.com" });
+
+    // Take Claude away from team members.
+    await page.getByRole("tab", { name: /Roles/ }).click();
+    await page.getByRole("checkbox", { name: "Team member: Use Claude (briefings, questions, plan drafts)" }).uncheck();
+    await page.getByTestId("save-roles").click();
+    await expect(page.getByText(/Role permissions saved/)).toBeVisible();
+
+    // Turn off manual time entries.
+    await page.getByRole("tab", { name: "Rules" }).click();
+    await page.getByLabel(/Allow manual time entries/).uncheck();
+    await page.getByTestId("save-rules").click();
+    await expect(page.getByText(/Rules saved/)).toBeVisible();
+
+    await page.getByRole("tab", { name: /Users/ }).click();
+    await page.getByRole("button", { name: "Preview as Leo Martins" }).click();
+    await expect(page.getByRole("link", { name: "Ask Claude" })).toHaveCount(0);
+    await page.goto("/assistant");
+    await expect(page.getByText("Claude isn't part of your role")).toBeVisible();
+    await page.goto("/timesheet");
+    await expect(page.getByTestId("start-timer")).toBeVisible();
+    await expect(page.getByTestId("add-time")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Exit preview" }).click();
+    await page.getByRole("link", { name: "Admin" }).click();
+    await page.getByRole("tab", { name: "Activity log" }).click();
+    await expect(page.getByRole("cell", { name: "Changed roles or rules" }).first()).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Added a person" })).toBeVisible();
+  });
+});

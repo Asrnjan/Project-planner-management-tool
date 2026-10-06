@@ -1,3 +1,4 @@
+import { useCan } from "../../store/useAccessStore";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -147,6 +148,7 @@ export default function AiInsightCard({ scope = "portfolio", projectId = "", cla
   const tasks = usePlannerStore((state) => state.tasks);
   const sprints = usePlannerStore((state) => state.sprints);
 
+  const canUseAi = useCan("ai.use");
   const project = scope === "project" ? projects.find((item) => item.id === projectId) : null;
   const task = scope === "project" ? "project_insights" : "portfolio_insights";
 
@@ -159,6 +161,8 @@ export default function AiInsightCard({ scope = "portfolio", projectId = "", cla
 
   const { status, response, error, run, aiStatus } = useAiJob(task, input);
   const notConfigured = aiStatus && !aiStatus.configured;
+
+  if (!canUseAi) return null;
 
   return (
     <Card className={cx("flex flex-col overflow-hidden", className)} data-testid="ai-insight-card">

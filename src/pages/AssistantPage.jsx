@@ -15,6 +15,7 @@ import {
 import AiInsightCard, { AiNotConfigured } from "../components/ai/AiInsightCard";
 import { describeUsage } from "../components/ai/useAiJob";
 import { usePlannerStore } from "../store/usePlannerStore";
+import { useAccess } from "../store/useAccessStore";
 import { buildAskInput } from "../domain/aiContext";
 import { buildPlanTasks } from "../domain/planBuilder";
 import { todayIso } from "../domain/analytics";
@@ -179,13 +180,13 @@ function AskClaude({ projectId, disabled }) {
   );
 }
 
-function PlanGenerator({ disabled, defaultProjectId }) {
+function PlanGenerator({ disabled, defaultProjectId, canCreateProject }) {
   const projects = usePlannerStore((state) => state.projects);
   const addProject = usePlannerStore((state) => state.addProject);
   const addTasks = usePlannerStore((state) => state.addTasks);
   const navigate = useNavigate();
 
-  const [target, setTarget] = useState(defaultProjectId || "new");
+  const [target, setTarget] = useState(defaultProjectId || (canCreateProject ? "new" : projects[0]?.id || ""));
   const [name, setName] = useState("");
   const [brief, setBrief] = useState("");
   const [startDate, setStartDate] = useState(todayIso());
@@ -255,7 +256,7 @@ function PlanGenerator({ disabled, defaultProjectId }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Add the plan to" htmlFor="plan-target">
             <select id="plan-target" value={target} onChange={(event) => setTarget(event.target.value)} className={inputClass}>
-              <option value="new">A new project</option>
+              {canCreateProject ? <option value="new">A new project</option> : null}
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
@@ -361,6 +362,7 @@ function UsagePanel() {
 }
 
 export default function AssistantPage() {
+  const { permissions } = useAccess();
   const projects = usePlannerStore((state) => state.projects);
   const openNewProject = useUiStore((state) => state.openNewProject);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -376,6 +378,16 @@ export default function AssistantPage() {
     [projects, projectId]
   );
   const notConfigured = aiStatus && !aiStatus.configured;
+
+  if (!permissions["ai.use"]) {
+    return (
+      <EmptyState
+        icon={Sparkles}
+        title="Claude isn't part of your role"
+        description="Ask your administrator if you need AI briefings, answers or plan drafts."
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -437,7 +449,9 @@ export default function AssistantPage() {
       )}
 
       <div className="grid items-start gap-6 xl:grid-cols-[2fr_1fr]">
-        <PlanGenerator disabled={notConfigured} defaultProjectId={validProjectId} />
+        {permissions["tasks.create"] ? (
+          <PlanGenerator disabled={notConfigured} defaultProjectId={validProjectId} canCreateProject={permissions["projects.create"]} />
+        ) : null}
         <UsagePanel />
       </div>
     </div>

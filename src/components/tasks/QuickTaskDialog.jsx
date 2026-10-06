@@ -1,3 +1,4 @@
+import { useAccessStore } from "../../store/useAccessStore";
 import { useState } from "react";
 import { usePlannerStore } from "../../store/usePlannerStore";
 import { useUiStore } from "../../ui/uiStore";
@@ -19,6 +20,8 @@ const EMPTY = {
 };
 
 function QuickTaskForm({ initialProjectId, onClose }) {
+  const members = useAccessStore((state) => state.members);
+  const teamNames = members.filter((member) => member.active && member.displayName).map((member) => member.displayName);
   const projects = usePlannerStore((state) => state.projects);
   const sprints = usePlannerStore((state) => state.sprints);
   const addTask = usePlannerStore((state) => state.addTask);
@@ -121,7 +124,13 @@ function QuickTaskForm({ initialProjectId, onClose }) {
             onChange={(event) => update("owner", event.target.value)}
             className={inputClass}
             placeholder="Name"
+            list="qt-owner-team"
           />
+          <datalist id="qt-owner-team">
+            {teamNames.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         </Field>
         <Field label="Start" htmlFor="qt-start">
           <input

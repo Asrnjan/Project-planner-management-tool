@@ -126,6 +126,7 @@ describe("handleAiRequest", () => {
     expect(anonymous.status).toBe(401);
 
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: "user-1" }), { status: 200 }));
+    fetchMock.mockResolvedValueOnce(new Response("true", { status: 200 }));
     const signedIn = await handleAiRequest({
       body: { task: "ask", input: { a: 1 } },
       headers: { authorization: "Bearer token" },
@@ -143,6 +144,25 @@ describe("handleAiRequest", () => {
       client,
     });
     expect(badToken.status).toBe(401);
+  });
+
+  it("checks the person's role for Claude access", async () => {
+    const { client } = fakeClient(insights);
+    const env = { ...ENV, SUPABASE_URL: "https://x.supabase.co", SUPABASE_ANON_KEY: "anon" };
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const request = (n) => ({ body: { task: "ask", input: { n } }, headers: { authorization: "Bearer token" }, env, client });
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: "user-1" }), { status: 200 }));
+    fetchMock.mockResolvedValueOnce(new Response("false", { status: 200 }));
+    const denied = await handleAiRequest(request(10));
+    expect(denied.status).toBe(403);
+    expect(fetchMock.mock.calls.at(-1)[0]).toBe("https://x.supabase.co/rest/v1/rpc/has_permission");
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)[1].body)).toEqual({ perm: "ai.use" });
+
+    // Workspaces without team roles yet keep working.
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: "user-1" }), { status: 200 }));
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 404 }));
+    expect((await handleAiRequest(request(11))).status).toBe(200);
   });
 });
 

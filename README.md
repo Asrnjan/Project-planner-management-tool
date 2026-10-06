@@ -84,21 +84,42 @@ The key is only read by the backend and never reaches the browser.
 
 ### Supabase
 
-Run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL editor.
-It creates the tables and **row level security** policies:
+Run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL editor
+(it is idempotent, so re-run it after every update). It sets up one shared
+team workspace with **row level security** and database triggers:
 
-- Users can only read and change their own data.
-- Admins can read everything, for the portfolio report.
-- Nobody can make themselves an admin from the app.
+- **Invite-only.** The first person to sign in becomes the administrator.
+  Everyone else needs to be added by email in **Admin → Users** first; when
+  they sign in with that address they get the role and project access
+  chosen for them. Sign in yourself before sharing the address.
+- **Roles and permissions.** Administrator, Project manager, Team member and
+  Viewer, each with an editable set of permissions (Admin → Roles &
+  permissions), plus per-person exceptions. Members only see the projects
+  they were given.
+- **Escalation guards.** Nobody can raise their own access, only
+  administrators can grant administrator rights, and the last administrator
+  can't be removed or demoted.
+- **Timesheets.** Timers use the server's clock; manual entries, the daily
+  hour limit, the lock period, notes, approval and "only my tasks" follow
+  the rules in Admin → Rules. Nobody approves their own time (except
+  administrators).
+- **Activity log.** Changes to people, roles and rules, sign-ins, imports and
+  exports are recorded.
+- **Safe team editing.** Each project is saved only when it changed. If two
+  people edit the same project at once, the app merges their changes task
+  by task (the saved version wins if both changed the same task) and shows a
+  note. Teammates' changes appear within a minute or when you return to the
+  tab.
 
-The script is idempotent. Review it against your existing schema before
-running it on a live database. `npm test` checks these rules against a real
-Postgres engine (PGlite).
+Also turn on **Authentication → Providers → Email → Confirm email**, so
+nobody can sign up with an address they don't own.
 
-To make someone an admin:
+`npm test` checks all of these rules against a real Postgres engine (PGlite).
+
+To recover administrator access from the SQL editor:
 
 ```sql
-update public.user_profiles set role = 'admin' where email = 'person@company.com';
+update public.workspace_members set role = 'admin', active = true where email = 'you@company.com';
 ```
 
 ## How Claude is used, and how cost is kept low

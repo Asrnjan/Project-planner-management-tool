@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { normalizePriority, normalizeTaskStatus } from "../domain/vocabulary";
 import { notify } from "../ui/feedback";
+import { changedTaskFields, checkTaskEdit, filterTaskChanges } from "../domain/permissions";
+import { getAccess } from "./useAccessStore";
+import { fingerprint, mergeProjectPayload } from "../domain/merge";
 import {
   loadPlannerData,
   savePlannerData,
@@ -382,42 +385,170 @@ function persist(state) {
   savePlannerData(makeWorkspacePayload(state), state.currentUserId || "");
 }
 
-async function persistCurrentWorkspaceToCloud(state) {
-  const currentUserId = state.currentUserId || "";
+// What the server last confirmed for each project: its row id, version
+// (updated_at) and the project's data at that point, used to skip unchanged
+// projects and to merge when someone else saved in between.
+const cloudSync = new Map();
 
-  if (!currentUserId) return;
+function projectPayload(state, project) {
+  return {
+    ...project,
+    sprints: state.sprints.filter((sprint) => sprint.projectId === project.id),
+    tasks: state.tasks.filter((task) => task.projectId === project.id),
+    baselineSnapshots: state.baselineSnapshots.filter((snapshot) => !snapshot.projectId || snapshot.projectId === project.id),
+    plannerSettings: state.plannerSettings,
+    saveType: "single_project_workspace",
+  };
+}
 
-  const workspacePayload = makeWorkspacePayload(state);
-
-  const saveJobs = state.projects.map((project) => {
-    const projectScopedPayload = {
-      ...project,
-      userId: currentUserId,
-      projects: [project],
-      sprints: state.sprints.filter((sprint) => sprint.projectId === project.id),
-      tasks: state.tasks.filter((task) => task.projectId === project.id),
-      baselineSnapshots: state.baselineSnapshots.filter(
-        (snapshot) => !snapshot.projectId || snapshot.projectId === project.id
-      ),
-      weeklyReports: state.weeklyReports.filter(
-        (report) => report.projectId === project.id
-      ),
-      projectDocuments: state.projectDocuments.filter(
-        (document) => document.projectId === project.id
-      ),
-      plannerSettings: state.plannerSettings,
-      savedAt: nowIso(),
-      saveType: "single_project_workspace",
-      fullWorkspaceSnapshot: workspacePayload,
-    };
-
-    return saveProject(projectScopedPayload).catch((error) => {
-      console.error("Failed to save project workspace to Supabase:", error);
-      return null;
-    });
+function rememberSynced(state, cloudProjectRows = []) {
+  cloudSync.clear();
+  const rowsById = new Map(cloudProjectRows.map((row) => [row.id, row]));
+  state.projects.forEach((project) => {
+    const row = rowsById.get(project.id);
+    if (!row) return;
+    const payload = projectPayload(state, project);
+    cloudSync.set(project.id, { cloudId: row.cloudId, updatedAt: row.updated_at, base: payload, hash: fingerprint(payload) });
   });
+}
 
-  await Promise.all(saveJobs);
+function payloadToState(payload) {
+  return buildWorkspaceFromCloudProjects([{ ...payload, project_data: payload }]);
+}
+
+/** Replaces one project's data in the store with `payload`. */
+function replaceProjectInState(projectId, payload) {
+  const incoming = payloadToState(payload);
+  usePlannerStore.setState((state) => {
+    const next = {
+      ...state,
+      projects: state.projects.some((project) => project.id === projectId)
+        ? state.projects.map((project) => (project.id === projectId ? incoming.projects[0] || project : project))
+        : [...state.projects, ...incoming.projects],
+      tasks: [...state.tasks.filter((task) => task.projectId !== projectId), ...incoming.tasks],
+      sprints: [...state.sprints.filter((sprint) => sprint.projectId !== projectId), ...incoming.sprints],
+      baselineSnapshots: [
+        ...state.baselineSnapshots.filter((snapshot) => snapshot.projectId !== projectId),
+        ...incoming.baselineSnapshots.filter((snapshot) => snapshot.projectId === projectId),
+      ],
+    };
+    persist(next);
+    return next;
+  });
+}
+
+function removeProjectFromState(projectId) {
+  usePlannerStore.setState((state) => {
+    const next = {
+      ...state,
+      projects: state.projects.filter((project) => project.id !== projectId),
+      tasks: state.tasks.filter((task) => task.projectId !== projectId),
+      sprints: state.sprints.filter((sprint) => sprint.projectId !== projectId),
+    };
+    persist(next);
+    return next;
+  });
+}
+
+function canSaveProjectContent() {
+  const { permissions } = getAccess();
+  return ["projects.edit", "projects.create", "tasks.edit_all", "tasks.edit_assigned", "tasks.create", "tasks.delete"].some(
+    (key) => permissions[key]
+  );
+}
+
+async function saveOneProject(state, project) {
+  let payload = projectPayload(state, project);
+  let hash = fingerprint(payload);
+  let synced = cloudSync.get(project.id);
+  if (synced && synced.hash === hash) return;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await saveProject(
+      { ...payload, cloudId: synced?.cloudId || project.cloudId || "" },
+      { expectedUpdatedAt: synced?.updatedAt || "" }
+    );
+
+    if (!result.conflict) {
+      cloudSync.set(project.id, { cloudId: result.project.cloudId, updatedAt: result.project.updated_at, base: payload, hash });
+      return;
+    }
+
+    // Someone else saved this project since we loaded it: merge task by task.
+    const theirs = result.latest.project_data || {};
+    const { merged, conflicts } = mergeProjectPayload(synced?.base || theirs, payload, theirs);
+    cloudSync.set(project.id, {
+      cloudId: result.latest.cloudId,
+      updatedAt: result.latest.updated_at,
+      base: theirs,
+      hash: fingerprint(theirs),
+    });
+    replaceProjectInState(project.id, merged);
+    if (conflicts.length) {
+      notify.info(
+        `${project.name}: someone else changed ${conflicts.length === 1 ? `"${conflicts[0].title}"` : `${conflicts.length} of the same items`} at the same time. Their version was kept.`
+      );
+    }
+
+    payload = projectPayload(usePlannerStore.getState(), usePlannerStore.getState().projects.find((item) => item.id === project.id) || project);
+    hash = fingerprint(payload);
+    synced = cloudSync.get(project.id);
+    if (synced.hash === hash) return;
+  }
+
+  throw new Error(`Could not save ${project.name}; it keeps changing. Your change is kept on this device.`);
+}
+
+async function persistCurrentWorkspaceToCloud(state) {
+  if (!state.currentUserId || !canSaveProjectContent()) return;
+
+  const results = await Promise.allSettled(state.projects.map((project) => saveOneProject(state, project)));
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length) {
+    console.error("Failed to save projects to Supabase:", failed.map((result) => result.reason));
+    notify.error(failed[0].reason?.message || "Some changes could not be saved to the cloud. They are kept on this device.");
+  }
+}
+
+/**
+ * Brings in changes other people saved. Projects with unsaved local changes
+ * are left alone; their next save merges.
+ */
+export async function pullCloudChanges() {
+  if (!cloudSyncEnabled || cloudSaveTimer || cloudSaveInProgress) return false;
+  const rows = await loadProjects();
+  const state = usePlannerStore.getState();
+  const seen = new Set();
+  let changed = false;
+
+  for (const row of rows) {
+    const localId = row.id;
+    seen.add(localId);
+    const synced = cloudSync.get(localId);
+    if (synced && synced.updatedAt === row.updated_at) continue;
+    const local = state.projects.find((project) => project.id === localId);
+    if (local && synced && fingerprint(projectPayload(usePlannerStore.getState(), local)) !== synced.hash) continue;
+    const payload = row.project_data || {};
+    replaceProjectInState(localId, { ...payload, cloudId: row.cloudId });
+    const now = usePlannerStore.getState();
+    const project = now.projects.find((item) => item.id === localId);
+    if (project) {
+      const fresh = projectPayload(now, project);
+      cloudSync.set(localId, { cloudId: row.cloudId, updatedAt: row.updated_at, base: fresh, hash: fingerprint(fresh) });
+    }
+    changed = true;
+  }
+
+  for (const [localId, synced] of [...cloudSync.entries()]) {
+    if (seen.has(localId)) continue;
+    const local = usePlannerStore.getState().projects.find((project) => project.id === localId);
+    if (local && fingerprint(projectPayload(usePlannerStore.getState(), local)) !== synced.hash) continue;
+    cloudSync.delete(localId);
+    removeProjectFromState(localId);
+    changed = true;
+  }
+
+  return changed;
 }
 
 function queueCloudWorkspaceSave(state, delay = 3000) {
@@ -499,6 +630,34 @@ function cloudOnly(promiseFactory, failureMessage) {
   });
 }
 
+const DENIED_MESSAGES = {
+  "projects.create": "Your role can't create projects.",
+  "projects.edit": "Your role can't change project details, sprints or scheduling.",
+  "projects.delete": "Your role can't delete projects.",
+  "tasks.create": "Your role can't add tasks.",
+  "tasks.delete": "Your role can't delete tasks.",
+  "reports.write": "Your role can't write status reports.",
+  "documents.manage": "Your role can't change documents.",
+  "data.import": "Your role can't import data.",
+};
+
+/** Checks the current person's permission; explains when it is missing. */
+function allowed(permission) {
+  if (getAccess().permissions[permission]) return true;
+  notify.error(DENIED_MESSAGES[permission] || "You don't have permission to do that.");
+  return false;
+}
+
+function reportDenied(denied) {
+  if (!denied.length) return;
+  const first = denied[0];
+  notify.error(
+    denied.length === 1
+      ? `${first.reason} ("${first.task.title}" was not changed.)`
+      : `${first.reason} ${denied.length} changes were not applied.`
+  );
+}
+
 const initialData = normalizePlannerData(loadPlannerData() || emptyPlannerData());
 
 export const usePlannerStore = create((set, get) => ({
@@ -563,32 +722,26 @@ export const usePlannerStore = create((set, get) => ({
       const localData = normalizePlannerData(loadPlannerData(user.id));
 
       const [cloudProjects, cloudReports, cloudDocuments] = await Promise.all([
-        loadProjects({ allUsers: false }),
+        loadProjects(),
         loadWeeklyReports({ allUsers: false }),
         loadProjectDocuments({ allUsers: false }),
       ]);
 
       const cloudWorkspace = buildWorkspaceFromCloudProjects(cloudProjects);
 
-      const hasCloudProjects = cloudWorkspace.projects.length > 0;
-
+      // The shared workspace on the server is the source of truth; the
+      // browser copy is only a cache.
       const next = {
         currentUserId: user.id,
         storageMode: "cloud",
         isWorkspaceLoading: false,
         workspaceLoadError: "",
 
-        projects: hasCloudProjects ? cloudWorkspace.projects : localData.projects,
-        sprints: hasCloudProjects ? cloudWorkspace.sprints : localData.sprints,
-        tasks: hasCloudProjects ? cloudWorkspace.tasks : localData.tasks,
-
-        plannerSettings: hasCloudProjects
-          ? cloudWorkspace.plannerSettings
-          : localData.plannerSettings,
-
-        baselineSnapshots: hasCloudProjects
-          ? cloudWorkspace.baselineSnapshots
-          : localData.baselineSnapshots,
+        projects: cloudWorkspace.projects,
+        sprints: cloudWorkspace.sprints,
+        tasks: cloudWorkspace.tasks,
+        plannerSettings: cloudWorkspace.projects.length ? cloudWorkspace.plannerSettings : localData.plannerSettings,
+        baselineSnapshots: cloudWorkspace.baselineSnapshots,
 
         weeklyReports: Array.isArray(cloudReports)
           ? cloudReports.map(normalizeWeeklyReport)
@@ -600,6 +753,7 @@ export const usePlannerStore = create((set, get) => ({
       };
 
       set(next);
+      rememberSynced(next, cloudProjects);
       savePlannerData(makeWorkspacePayload(next), user.id);
 
       return next;
@@ -620,6 +774,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   clearWorkspaceForLogout: () => {
+    cloudSync.clear();
     const userId = get().currentUserId;
     const wasCloud = cloudSyncEnabled;
     cloudSyncEnabled = false;
@@ -697,6 +852,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   setSchedulingMode: (mode) => {
+    if (!allowed("projects.edit")) return;
     set((state) => {
       const next = {
         ...state,
@@ -713,6 +869,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   createBaselineSnapshot: ({ name, projectId = "" }) => {
+    if (!allowed("projects.edit")) return;
     set((state) => {
       const scopedTasks = projectId
         ? state.tasks.filter((task) => task.projectId === projectId)
@@ -754,6 +911,7 @@ export const usePlannerStore = create((set, get) => ({
    * Weekly reports and documents are kept unless the import carries them.
    */
   importPlannerData: (payload = {}, { mode = "replace" } = {}) => {
+    if (!allowed("data.import")) return null;
     const before = get();
     const imported = normalizePlannerData(payload);
     const hasReports = Array.isArray(payload.weeklyReports);
@@ -818,6 +976,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   addProject: (project) => {
+    if (!allowed("projects.create")) return null;
     const timestamp = nowIso();
 
     const newProject = normalizeProject({
@@ -865,63 +1024,16 @@ export const usePlannerStore = create((set, get) => ({
       return next;
     });
 
-    const latestState = get();
-
-    if (!cloudSyncEnabled) {
-      return newProject;
+    if (cloudSyncEnabled) {
+      // The save queue creates the row and remembers its id and version.
+      queueCloudWorkspaceSave(get(), 300);
     }
-
-    saveProject({
-      ...newProject,
-      userId: latestState.currentUserId,
-
-      projects: [newProject],
-      sprints: [],
-      tasks: [],
-      baselineSnapshots: [],
-      weeklyReports: [],
-      projectDocuments: [],
-
-      plannerSettings: latestState.plannerSettings,
-      savedAt: nowIso(),
-      saveType: "single_project_workspace",
-    })
-      .then((savedProject) => {
-        if (!savedProject) return;
-
-        set((state) => {
-          const next = {
-            ...state,
-            projects: state.projects.map((existingProject) =>
-              existingProject.id === newProject.id
-                ? {
-                    ...existingProject,
-                    cloudId: savedProject.cloudId || savedProject.dbId || "",
-                    dbId: savedProject.dbId || savedProject.cloudId || "",
-                    userId: savedProject.userId || state.currentUserId,
-                    updatedAt: savedProject.updatedAt || nowIso(),
-                  }
-                : existingProject
-            ),
-          };
-
-          persist(next);
-
-          return next;
-        });
-      })
-      .catch((error) => {
-        console.error("Failed to save project to Supabase:", error);
-
-        notify.error(
-          "The project was saved on this device but could not be synced to the cloud. It will retry on your next change."
-        );
-      });
 
     return newProject;
   },
 
   updateProject: (projectId, updates) => {
+    if (!allowed("projects.edit")) return;
     set((state) => {
       let updatedProject = null;
 
@@ -957,6 +1069,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   deleteProject: (projectId) => {
+    if (!allowed("projects.delete")) return;
     const stateBeforeDelete = get();
 
     const projectToDelete = stateBeforeDelete.projects.find(
@@ -1061,6 +1174,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   duplicateProject: (projectId) => {
+    if (!allowed("projects.create")) return;
     set((state) => {
       const originalProject = state.projects.find(
         (project) =>
@@ -1172,6 +1286,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   addSprint: (sprint) => {
+    if (!allowed("projects.edit")) return;
     set((state) => {
       const newSprint = normalizeSprint({
         ...sprint,
@@ -1190,6 +1305,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   updateSprint: (sprintId, updates) => {
+    if (!allowed("projects.edit")) return;
     set((state) => {
       const next = {
         ...state,
@@ -1212,6 +1328,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   deleteSprint: (sprintId) => {
+    if (!allowed("projects.edit")) return;
     set((state) => {
       const next = {
         ...state,
@@ -1231,6 +1348,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   addTask: (task) => {
+    if (!allowed("tasks.create")) return;
     set((state) => {
       const newTask = normalizeTask({
         ...task,
@@ -1250,6 +1368,7 @@ export const usePlannerStore = create((set, get) => ({
 
   /** Adds several tasks at once (AI plans, templates). */
   addTasks: (newTasks = []) => {
+    if (!allowed("tasks.create")) return;
     set((state) => {
       const next = {
         ...state,
@@ -1268,6 +1387,14 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   updateTask: (taskId, updates) => {
+    const current = get().tasks.find((task) => task.id === taskId);
+    if (current) {
+      const check = checkTaskEdit(getAccess(), current, changedTaskFields(current, { ...current, ...updates }));
+      if (!check.ok) {
+        notify.error(check.reason);
+        return;
+      }
+    }
     set((state) => {
       const next = {
         ...state,
@@ -1321,6 +1448,11 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   bulkReplaceTasks: (nextTasks) => {
+    if (Array.isArray(nextTasks)) {
+      const { tasks: permitted, denied } = filterTaskChanges(getAccess(), get().tasks, nextTasks);
+      reportDenied(denied);
+      nextTasks = permitted;
+    }
     set((state) => {
       const next = {
         ...state,
@@ -1343,6 +1475,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   deleteTask: (taskId) => {
+    if (!allowed("tasks.delete")) return;
     set((state) => {
       const next = {
         ...state,
@@ -1367,6 +1500,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   addWeeklyReport: (report) => {
+    if (!allowed("reports.write")) return;
     set((state) => {
       const timestamp = nowIso();
 
@@ -1393,6 +1527,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   updateWeeklyReport: (reportId, updates) => {
+    if (!allowed("reports.write")) return;
     set((state) => {
       let updatedReport = null;
 
@@ -1427,6 +1562,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   deleteWeeklyReport: (reportId) => {
+    if (!allowed("reports.write")) return;
     set((state) => {
       const next = {
         ...state,
@@ -1444,6 +1580,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   addProjectDocument: (document) => {
+    if (!allowed("documents.manage")) return;
     set((state) => {
       const timestamp = nowIso();
 
@@ -1469,6 +1606,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   updateProjectDocument: (documentId, updates) => {
+    if (!allowed("documents.manage")) return;
     set((state) => {
       let updatedDocument = null;
 
@@ -1502,6 +1640,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   deleteProjectDocument: (documentId) => {
+    if (!allowed("documents.manage")) return;
     set((state) => {
       const next = {
         ...state,
@@ -1519,6 +1658,7 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   resetAllData: () => {
+    if (!allowed("projects.delete")) return;
     const userId = get().currentUserId;
 
     if (cloudSaveTimer) {

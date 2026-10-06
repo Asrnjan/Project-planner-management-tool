@@ -63,9 +63,8 @@ export async function loadProjectDocuments(options = {}) {
     .select("*")
     .order("updated_at", { ascending: false });
 
-  if (!options.allUsers) {
-    query = query.eq("user_id", user.id);
-  }
+  // Row level security limits results to the projects this person can see.
+  void options;
 
   const { data, error } = await query;
 
@@ -96,8 +95,7 @@ export async function deleteProjectDocumentCloud(documentId) {
   const { error } = await supabase
     .from("project_documents")
     .delete()
-    .eq("id", documentId)
-    .eq("user_id", user.id);
+    .eq("id", documentId);
 
   if (error) {
     throw error;

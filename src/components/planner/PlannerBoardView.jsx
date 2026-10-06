@@ -1,3 +1,5 @@
+import { checkTaskEdit } from "../../domain/permissions";
+import { useAccess } from "../../store/useAccessStore";
 import { useRef, useState } from "react";
 import { CalendarDays, Milestone } from "lucide-react";
 import { Avatar } from "../../ui/primitives";
@@ -64,7 +66,7 @@ function formatDue(iso) {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-function TaskCard({ task, onDragStart, onQuickMove }) {
+function TaskCard({ task, onDragStart, onQuickMove, canMove }) {
   const today = new Date().toISOString().slice(0, 10);
   const due = task.plannedEnd || task.plannedStart;
   const late = due && due < today && task.status !== "Done";
@@ -72,9 +74,9 @@ function TaskCard({ task, onDragStart, onQuickMove }) {
 
   return (
     <div
-      draggable
+      draggable={canMove}
       onDragStart={() => onDragStart(task)}
-      className="group cursor-grab rounded-lg border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-slate-300 hover:shadow-md active:cursor-grabbing"
+      className={`group rounded-lg border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-slate-300 hover:shadow-md ${canMove ? "cursor-grab active:cursor-grabbing" : ""}`}
     >
       <div className="flex items-start gap-2">
         <span
@@ -107,6 +109,7 @@ function TaskCard({ task, onDragStart, onQuickMove }) {
         </div>
       ) : null}
 
+      {canMove ? (
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-100 pt-2">
         {columns
           .filter((status) => status !== task.status)
@@ -121,11 +124,13 @@ function TaskCard({ task, onDragStart, onQuickMove }) {
             </button>
           ))}
       </div>
+      ) : null}
     </div>
   );
 }
 
 export default function PlannerBoardView({ tasks, onUpdateTask }) {
+  const access = useAccess();
   const draggedTaskIdRef = useRef(null);
   const [hoverColumn, setHoverColumn] = useState("");
 
@@ -203,6 +208,7 @@ export default function PlannerBoardView({ tasks, onUpdateTask }) {
                     <TaskCard
                       task={task}
                       onDragStart={handleDragStart}
+                      canMove={checkTaskEdit(access, task, ["status"]).ok}
                       onQuickMove={handleQuickMove}
                     />
                   </div>
