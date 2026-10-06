@@ -3,6 +3,7 @@ import { useAccess } from "../../store/useAccessStore";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildTaskIndexMaps,
+  getAncestorIds,
   calculateEndDateFromDuration,
   getTaskDuration,
   applySingleGridDraftToTask,
@@ -116,15 +117,7 @@ function ToolbarButton({ children, variant = "secondary", ...props }) {
 }
 
 function getTaskDepth(task, taskById) {
-  let depth = 0;
-  let currentParentId = task.parentTaskId;
-
-  while (currentParentId && taskById[currentParentId]) {
-    depth += 1;
-    currentParentId = taskById[currentParentId].parentTaskId;
-  }
-
-  return depth;
+  return getAncestorIds(task, taskById).length;
 }
 
 function getTaskWbs(task, fallbackIndex) {
@@ -646,12 +639,9 @@ export default function PlannerScheduleTable({
     const nextCollapsed = {};
 
     function openParentChain(taskId) {
-      let current = taskById[taskId];
-
-      while (current?.parentTaskId) {
-        nextCollapsed[current.parentTaskId] = false;
-        current = taskById[current.parentTaskId];
-      }
+      getAncestorIds(taskById[taskId], taskById).forEach((id) => {
+        nextCollapsed[id] = false;
+      });
     }
 
     openParentChain(focusedTaskId);
@@ -682,16 +672,7 @@ export default function PlannerScheduleTable({
     return ordered.filter((task) => {
       if (!task.parentTaskId) return true;
 
-      let currentParentId = task.parentTaskId;
-
-      while (currentParentId) {
-        if (collapsedParents[currentParentId]) return false;
-
-        const parent = taskById[currentParentId];
-        currentParentId = parent?.parentTaskId || "";
-      }
-
-      return true;
+      return !getAncestorIds(task, taskById).some((id) => collapsedParents[id]);
     });
   }, [ordered, collapsedParents, taskById]);
 
