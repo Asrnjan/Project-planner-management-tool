@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { applySingleGridDraftToTask, getTaskDuration } from "../utils/planner";
+import { applySingleGridDraftToTask, buildWbs, getCriticalPathStarter, getTaskDuration } from "../utils/planner";
 import { addWorkingDays, buildPlanTasks, nextWorkingDay } from "../domain/planBuilder";
+import * as plannerUtils from "../utils/planner";
+import * as analytics from "../domain/analytics";
 
 const tasks = [
   { id: "a", title: "A", plannedStart: "2025-07-01", plannedEnd: "2025-07-03", durationDays: 3, dependencyIds: [] },
@@ -78,5 +80,54 @@ describe("planBuilder", () => {
     expect(byTitle.Build.plannedStart).toBe("2025-07-08");
     expect(byTitle["Bad forward link"].dependencyIds).toEqual([]);
     expect(plan.every((task) => task.projectId === "p1")).toBe(true);
+  });
+});
+
+describe("circular data (regression: 'Maximum call stack size exceeded')", () => {
+  const a = { id: "a", title: "A", plannedStart: "2026-10-01", plannedEnd: "2026-10-03", dependencyIds: ["b"] };
+  const b = { id: "b", title: "B", plannedStart: "2026-10-04", plannedEnd: "2026-10-05", dependencyIds: ["a"] };
+
+  it("critical path survives dependencies that go in a circle", () => {
+    expect(() => getCriticalPathStarter([a, b, { ...a, id: "c", dependencyIds: ["c"] }])).not.toThrow();
+  });
+
+  it("WBS numbering survives tasks that are their own ancestors", () => {
+    const tasks = [
+      { id: "x", title: "X", parentTaskId: "y" },
+      { id: "y", title: "Y", parentTaskId: "x" },
+      { id: "z", title: "Z", parentTaskId: "z" },
+      { id: "r", title: "Root" },
+    ];
+    const ordered = buildWbs(tasks);
+    expect(ordered.map((task) => task.id).sort()).toEqual(["r", "x", "y", "z"]);
+  });
+});
+
+describe("every planner and analytics function tolerates circular data", () => {
+  const cyclic = [
+    { id: "a", projectId: "p", title: "A", status: "Blocked", plannedStart: "2026-10-01", plannedEnd: "2026-10-03", dependencyIds: ["b"], parentTaskId: "c" },
+    { id: "b", projectId: "p", title: "B", status: "In Progress", plannedStart: "2026-10-04", plannedEnd: "2026-10-05", dependencyIds: ["a"] },
+    { id: "c", projectId: "p", title: "C", status: "Not Started", plannedStart: "2026-10-06", plannedEnd: "2026-10-08", dependencyIds: ["c"], parentTaskId: "a" },
+  ];
+
+  it.each(Object.entries(plannerUtils).filter(([, fn]) => typeof fn === "function"))("%s", (name, fn) => {
+    expect(() => fn(cyclic.map((task) => ({ ...task })), {}, "a")).not.toThrow(RangeError);
+  });
+
+  it.each(Object.entries(analytics).filter(([, fn]) => typeof fn === "function"))("analytics %s", (name, fn) => {
+    expect(() => fn({ id: "p", name: "P" }, cyclic, "2026-10-06")).not.toThrow(RangeError);
+  });
+
+  it("reports the loop so it can be fixed", () => {
+    const warnings = plannerUtils.getPlannerWarnings(cyclic);
+    expect(warnings.some((warning) => warning.type === "circular-dependency")).toBe(true);
+  });
+
+  it("refuses to create a new loop from the Depends on cell", () => {
+    const tasks = [
+      { id: "a", title: "A", dependencyIds: [] },
+      { id: "b", title: "B", dependencyIds: ["a"] },
+    ];
+    expect(plannerUtils.parsePredecessorInput("2", tasks, "a").dependencyIds).toEqual([]);
   });
 });

@@ -55,8 +55,11 @@ export function buildWbs(tasks) {
   });
 
   const ordered = [];
+  const visited = new Set();
 
   function walk(task, prefix) {
+    if (visited.has(task.id)) return;
+    visited.add(task.id);
     ordered.push({ ...task, wbs: prefix });
 
     const children = childrenMap.get(task.id) || [];
@@ -66,11 +69,21 @@ export function buildWbs(tasks) {
   }
 
   const rootTasks = tasks.filter(
-    (task) => !task.parentTaskId || !taskMap.has(task.parentTaskId)
+    (task) => !task.parentTaskId || !taskMap.has(task.parentTaskId) || task.parentTaskId === task.id
   );
 
   rootTasks.forEach((task, index) => {
     walk(task, `${index + 1}`);
+  });
+
+  // Tasks whose parent links go in a circle have no root; list them at the
+  // top level rather than losing them.
+  let next = rootTasks.length;
+  tasks.forEach((task) => {
+    if (!visited.has(task.id)) {
+      next += 1;
+      walk(task, `${next}`);
+    }
   });
 
   return ordered;
@@ -106,6 +119,36 @@ export function getPredecessorNames(task, allTasks) {
     .filter(Boolean);
 }
 
+/**
+ * True when `fromId` already waits, directly or through other tasks, on
+ * `targetId`. Used to refuse dependencies that would form a circle.
+ */
+export function dependsOnTask(fromId, targetId, byId) {
+  const stack = [fromId];
+  const seen = new Set();
+  while (stack.length) {
+    const id = stack.pop();
+    if (id === targetId) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    (byId[id]?.dependencyIds || []).forEach((next) => stack.push(next));
+  }
+  return false;
+}
+
+/** Ids of a task's parent, grandparent... Stops if the chain loops. */
+export function getAncestorIds(task, byId) {
+  const ancestors = [];
+  const seen = new Set([task?.id]);
+  let parentId = task?.parentTaskId || "";
+  while (parentId && byId[parentId] && !seen.has(parentId)) {
+    seen.add(parentId);
+    ancestors.push(parentId);
+    parentId = byId[parentId].parentTaskId || "";
+  }
+  return ancestors;
+}
+
 export function parsePredecessorInput(input, allTasks, currentTaskId) {
   const text = String(input || "").trim();
   if (!text) return { dependencyIds: [], dependencyRules: [] };
@@ -134,6 +177,8 @@ export function parsePredecessorInput(input, allTasks, currentTaskId) {
     }
 
     if (!matchedTask || matchedTask.id === currentTaskId) return;
+    // A task can't wait for something that already waits for it.
+    if (currentTaskId && dependsOnTask(matchedTask.id, currentTaskId, byId)) return;
     dependencyIds.push(matchedTask.id);
   });
 
@@ -194,8 +239,13 @@ export function getCriticalPathStarter(tasks) {
     return Number(getTaskDuration(task) || 0);
   }
 
+  const inProgress = new Set();
+
   function longestPath(task) {
     if (memo[task.id] !== undefined) return memo[task.id];
+    // Circular dependencies: stop following the loop instead of recursing forever.
+    if (inProgress.has(task.id)) return 0;
+    inProgress.add(task.id);
 
     const predecessors = (task.dependencyIds || [])
       .map((id) => byId[id])
@@ -203,11 +253,13 @@ export function getCriticalPathStarter(tasks) {
 
     if (predecessors.length === 0) {
       memo[task.id] = duration(task);
+      inProgress.delete(task.id);
       return memo[task.id];
     }
 
     const maxPred = Math.max(...predecessors.map(longestPath));
     memo[task.id] = maxPred + duration(task);
+    inProgress.delete(task.id);
     return memo[task.id];
   }
 
@@ -240,6 +292,16 @@ export function getPlannerWarnings(tasks) {
         message: warning.message,
       });
     });
+
+    const circular = (task.dependencyIds || []).filter((id) => byId[id] && dependsOnTask(id, task.id, byId));
+    if (circular.length) {
+      warnings.push({
+        taskId: task.id,
+        taskTitle: task.title,
+        type: "circular-dependency",
+        message: `Circular dependency with ${circular.map((id) => `"${byId[id].title}"`).join(", ")}: each waits for the other. Remove one link in "Depends on".`,
+      });
+    }
 
     const downstream = (blockedByMap[task.id] || [])
       .map((id) => byId[id])
@@ -393,12 +455,8 @@ export function getVisibleHierarchyTasks(tasks, collapsedParents = {}) {
   return ordered.filter((task) => {
     if (!task.parentTaskId) return true;
 
-    let currentParentId = task.parentTaskId;
-    while (currentParentId) {
-      if (collapsedParents[currentParentId]) return false;
-      const parent = ordered.find((t) => t.id === currentParentId);
-      currentParentId = parent?.parentTaskId || "";
-    }
+    const byId = Object.fromEntries(ordered.map((t) => [t.id, t]));
+    if (getAncestorIds(task, byId).some((id) => collapsedParents[id])) return false;
 
     return true;
   });
@@ -415,10 +473,13 @@ function rollupSummaryTasks(tasks) {
     }
   });
 
+  const visited = new Set();
+
   function visit(taskId) {
     const task = byId[taskId];
     const childIds = childrenMap[taskId] || [];
-    if (!task) return;
+    if (!task || visited.has(taskId)) return;
+    visited.add(taskId);
 
     childIds.forEach(visit);
 

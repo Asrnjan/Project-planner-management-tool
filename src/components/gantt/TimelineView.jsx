@@ -1,3 +1,4 @@
+import { getAncestorIds } from "../../utils/planner";
 import { checkTaskEdit } from "../../domain/permissions";
 import { useAccess } from "../../store/useAccessStore";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -46,7 +47,11 @@ function sortTasksHierarchy(tasks) {
 
   const result = [];
 
+  const added = new Set();
+
   function addTaskWithChildren(task, depth = 0) {
+    if (added.has(task.id)) return;
+    added.add(task.id);
     result.push({ ...task, depth });
     const children = childrenMap.get(task.id) || [];
     children.forEach((child) => addTaskWithChildren(child, depth + 1));
@@ -57,6 +62,8 @@ function sortTasksHierarchy(tasks) {
   );
 
   rootTasks.forEach((task) => addTaskWithChildren(task, 0));
+  // Tasks whose parent links loop have no root; keep them visible.
+  tasks.forEach((task) => addTaskWithChildren(task, 0));
 
   return result;
 }
@@ -148,21 +155,15 @@ export default function TimelineView({ tasks, onUpdateTask }) {
   const range = getProjectRange(tasks);
   const orderedTasks = useMemo(() => sortTasksHierarchy(tasks), [tasks]);
 
+  const orderedById = useMemo(() => Object.fromEntries(orderedTasks.map((t) => [t.id, t])), [orderedTasks]);
+
   const visibleTasks = useMemo(() => {
     return orderedTasks.filter((task) => {
       if (!task.parentTaskId) return true;
 
-      let currentParentId = task.parentTaskId;
-
-      while (currentParentId) {
-        if (collapsedParents[currentParentId]) return false;
-        const parent = orderedTasks.find((t) => t.id === currentParentId);
-        currentParentId = parent?.parentTaskId || "";
-      }
-
-      return true;
+      return !getAncestorIds(task, orderedById).some((id) => collapsedParents[id]);
     });
-  }, [orderedTasks, collapsedParents]);
+  }, [orderedTasks, orderedById, collapsedParents]);
 
   const childCountMap = useMemo(() => {
     const map = {};

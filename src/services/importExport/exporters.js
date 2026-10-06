@@ -148,14 +148,25 @@ function hierarchyOrder(tasks) {
   });
 
   const ordered = [];
+  const seen = new Set();
+  const add = (task, outline, level) => {
+    if (seen.has(task.id)) return;
+    seen.add(task.id);
+    ordered.push({ task, outline, level, hasChildren: children.has(task.id) });
+    visit(task.id, outline, level + 1);
+  };
   const visit = (parentId, prefix, level) => {
     (children.get(parentId) || []).forEach((task, index) => {
-      const outline = prefix ? `${prefix}.${index + 1}` : `${index + 1}`;
-      ordered.push({ task, outline, level, hasChildren: children.has(task.id) });
-      visit(task.id, outline, level + 1);
+      add(task, prefix ? `${prefix}.${index + 1}` : `${index + 1}`, level);
     });
   };
   visit("", "", 1);
+  // Tasks whose parent links loop are never reached from the top; export
+  // them at the top level instead of dropping them.
+  let top = (children.get("") || []).length;
+  tasks.forEach((task) => {
+    if (!seen.has(task.id)) add(task, `${(top += 1)}`, 1);
+  });
   return ordered;
 }
 
