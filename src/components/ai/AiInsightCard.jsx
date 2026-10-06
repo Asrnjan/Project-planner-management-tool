@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
@@ -14,6 +14,7 @@ import { usePlannerStore } from "../../store/usePlannerStore";
 import { buildPortfolioDigest, buildProjectDigest } from "../../domain/aiContext";
 import { Badge, Button, Card, cx } from "../../ui/primitives";
 import { describeUsage, useAiJob } from "./useAiJob";
+import { getAiStatus } from "../../services/aiService";
 
 const VERDICT = {
   on_track: { label: "On track", tone: "green" },
@@ -24,12 +25,41 @@ const VERDICT = {
 
 const WHEN = { today: "Today", this_week: "This week", next_week: "Next week" };
 
+/** Explains why Claude is unavailable: no server, or no API key on it. */
 export function AiNotConfigured({ compact = false }) {
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    getAiStatus().then((value) => {
+      if (alive) setStatus(value);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const serverMissing = status && !status.reachable;
+
   return (
-    <div className={cx("rounded-xl bg-slate-50 text-sm text-slate-600", compact ? "p-3" : "p-4")}>
+    <div
+      className={cx("rounded-xl bg-slate-50 text-sm text-slate-600", compact ? "p-3" : "p-4")}
+      data-testid="ai-not-configured"
+    >
       <p className="font-medium text-slate-800">Claude isn't connected yet.</p>
       <p className="mt-1">
-        An administrator needs to add an Anthropic API key to the server.{" "}
+        {serverMissing ? (
+          <>
+            The Claude server isn't running. Locally, start the app with{" "}
+            <code className="rounded bg-slate-200 px-1">npm run dev</code>, which starts it too.
+          </>
+        ) : (
+          <>
+            The server is running but has no Anthropic API key. Add{" "}
+            <code className="rounded bg-slate-200 px-1">ANTHROPIC_API_KEY</code> to the{" "}
+            <code className="rounded bg-slate-200 px-1">.env</code> file and restart.
+          </>
+        )}{" "}
         <Link to="/help#claude" className="font-semibold text-indigo-600 hover:underline">
           How to enable it
         </Link>

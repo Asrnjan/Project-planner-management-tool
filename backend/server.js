@@ -2,9 +2,11 @@ const path = require("path");
 
 // Settings come from the project's .env (and optionally backend/.env).
 // Variables already set in the environment win.
+const loadedEnvFiles = [];
 for (const envFile of [path.join(__dirname, ".env"), path.join(__dirname, "..", ".env")]) {
   try {
     process.loadEnvFile(envFile);
+    loadedEnvFiles.push(envFile);
   } catch {
     // File missing: fine.
   }
@@ -498,6 +500,19 @@ app.post("/api/ai", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`MS Project backend running on http://localhost:${PORT}`);
+  console.log(
+    loadedEnvFiles.length
+      ? `Settings loaded from ${loadedEnvFiles.join(", ")}`
+      : `No .env file found (looked in ${path.join(__dirname, "..")} and ${__dirname})`
+  );
+  const apiKey = (process.env.ANTHROPIC_API_KEY || "").trim();
+  if (!apiKey) {
+    console.log("Claude: OFF - ANTHROPIC_API_KEY is not set in .env");
+  } else if (!apiKey.startsWith("sk-ant-")) {
+    console.log("Claude: key found but it doesn't start with sk-ant- (check for quotes or a copy mistake)");
+  } else {
+    console.log(`Claude: ON (model ${process.env.AI_MODEL || "claude-opus-5-5"})`);
+  }
 
   // Prepare the converter in the background so the first .mpp import is fast.
   if (process.env.SKIP_CONVERTER_BUILD !== "true") {

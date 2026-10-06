@@ -125,8 +125,12 @@ export function getAiStatus({ refresh = false } = {}) {
   if (!statusPromise || refresh) {
     statusPromise = fetch(ENDPOINT, { method: "GET" })
       .then(async (response) => {
-        if (!response.ok) return { configured: false, reachable: response.status !== 404 };
-        const body = await response.json().catch(() => ({}));
+        // Only a JSON answer with "configured" proves the AI server is
+        // there. A dev proxy error or the static site's HTML page does not.
+        const body = await response.json().catch(() => null);
+        if (!response.ok || !body || typeof body.configured !== "boolean") {
+          return { configured: false, reachable: false };
+        }
         return { reachable: true, ...body };
       })
       .catch(() => ({ configured: false, reachable: false }));
