@@ -271,9 +271,28 @@ async function verifySupabaseUser(authorization, env) {
     });
     if (!response.ok) return { required: true, user: null };
     const user = await response.json();
-    return { required: true, user: user?.id ? user : null };
+    if (!user?.id) return { required: true, user: null };
+    return { required: true, user, allowed: await hasAiPermission(url, anonKey, token) };
   } catch {
     return { required: true, user: null };
+  }
+}
+
+// Asks the database whether this person's role includes Claude. Workspaces
+// created before team roles existed have no such function; they keep the
+// old behaviour (every signed-in user may use Claude).
+async function hasAiPermission(url, anonKey, token) {
+  try {
+    const response = await fetch(`${url.replace(/\/$/, "")}/rest/v1/rpc/has_permission`, {
+      method: "POST",
+      headers: { apikey: anonKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ perm: "ai.use" }),
+    });
+    if (response.status === 404) return true;
+    if (!response.ok) return false;
+    return (await response.json()) === true;
+  } catch {
+    return false;
   }
 }
 
@@ -363,6 +382,9 @@ export async function handleAiRequest({ body, headers = {}, ip = "", env = proce
   const auth = await verifySupabaseUser(headers.authorization || headers.Authorization, env);
   if (auth.required && !auth.user && env.AI_ALLOW_ANONYMOUS !== "true") {
     return json(401, { error: "Sign in to use Claude.", code: "unauthorized" });
+  }
+  if (auth.user && auth.allowed === false) {
+    return json(403, { error: "Your role doesn't include Claude. Ask your administrator.", code: "forbidden" });
   }
 
   const identity = auth.user?.id || `ip:${ip || "unknown"}`;

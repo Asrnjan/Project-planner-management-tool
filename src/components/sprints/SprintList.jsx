@@ -1,3 +1,4 @@
+import { useCan } from "../../store/useAccessStore";
 import { useMemo, useState } from "react";
 import { Milestone, Pencil, Plus, Timer, Trash2 } from "lucide-react";
 import { usePlannerStore } from "../../store/usePlannerStore";
@@ -20,6 +21,7 @@ function sprintPhase(sprint, today) {
 
 /** Sprints of one project, with create/edit dialogs. */
 export default function SprintList({ projectId, sprints, onAdd, onDelete, onUpdate }) {
+  const canEdit = useCan("projects.edit");
   const tasks = usePlannerStore((state) => state.tasks);
   const [dialog, setDialog] = useState(null); // { mode: "new" } | { mode: "edit", sprint }
   const today = new Date().toISOString().slice(0, 10);
@@ -58,17 +60,21 @@ export default function SprintList({ projectId, sprints, onAdd, onDelete, onUpda
         subtitle="Fixed periods, often two weeks, each with a goal. Assign tasks to a sprint in the Schedule."
         icon={Timer}
         actions={
-          <Button size="sm" variant="primary" icon={Plus} onClick={() => setDialog({ mode: "new" })}>
-            New sprint
-          </Button>
+          canEdit ? (
+            <Button size="sm" variant="primary" icon={Plus} onClick={() => setDialog({ mode: "new" })}>
+              New sprint
+            </Button>
+          ) : null
         }
       >
         {ordered.length === 0 ? (
           <div className="p-5">
             <EmptyState icon={Timer} title="No sprints yet" description="Create your first sprint to group work into short iterations.">
-              <Button variant="primary" icon={Plus} onClick={() => setDialog({ mode: "new" })}>
-                New sprint
-              </Button>
+              {canEdit ? (
+                <Button variant="primary" icon={Plus} onClick={() => setDialog({ mode: "new" })}>
+                  New sprint
+                </Button>
+              ) : null}
             </EmptyState>
           </div>
         ) : (
@@ -103,7 +109,7 @@ export default function SprintList({ projectId, sprints, onAdd, onDelete, onUpda
                     </div>
                     <ProgressBar value={pct} tone={pct === 100 ? "green" : "indigo"} label={`${sprint.name} progress`} />
                   </div>
-                  <div className="flex gap-1 md:justify-end">
+                  <div className={canEdit ? "flex gap-1 md:justify-end" : "hidden"}>
                     <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setDialog({ mode: "edit", sprint })}>
                       Edit
                     </Button>

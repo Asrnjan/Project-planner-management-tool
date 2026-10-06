@@ -1,3 +1,5 @@
+import { checkTaskEdit } from "../../domain/permissions";
+import { useAccess } from "../../store/useAccessStore";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Segmented } from "../../ui/primitives";
 import {
@@ -137,6 +139,7 @@ function isTodayBucket(bucket) {
 }
 
 export default function TimelineView({ tasks, onUpdateTask }) {
+  const access = useAccess();
   const [zoom, setZoom] = useState("day");
   const [collapsedParents, setCollapsedParents] = useState({});
   const [dragState, setDragState] = useState(null);
@@ -204,6 +207,7 @@ export default function TimelineView({ tasks, onUpdateTask }) {
 
   function startDrag(event, task, mode) {
     if (zoom !== "day") return;
+    if (!checkTaskEdit(access, task, ["plannedStart"]).ok) return;
 
     event.preventDefault();
     event.stopPropagation();

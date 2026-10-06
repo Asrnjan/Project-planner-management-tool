@@ -7,6 +7,7 @@ import {
   Keyboard,
   LayoutDashboard,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { Card, CardHeader, PageHeader } from "../ui/primitives";
 
@@ -94,6 +95,14 @@ export default function HelpPage() {
               <dt className="font-semibold text-slate-900"><Link className="hover:underline" to="/data">Import &amp; Export</Link></dt>
               <dd className="text-slate-600">Bring plans in from other tools, back up, or export to Excel, CSV, MS Project or your calendar.</dd>
             </div>
+            <div>
+              <dt className="font-semibold text-slate-900"><Link className="hover:underline" to="/timesheet">Timesheet</Link></dt>
+              <dd className="text-slate-600">Clock in and out, time your work on assigned tasks, submit and approve weekly time.</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-slate-900"><a className="hover:underline" href="#team">Admin</a></dt>
+              <dd className="text-slate-600">For administrators: people, roles and permissions, workspace rules and the activity log.</dd>
+            </div>
           </dl>
         </Card>
 
@@ -135,6 +144,34 @@ export default function HelpPage() {
             <li><strong>Microsoft Project:</strong> drop in the .mpp file (or .xml, .mpx). Primavera P6 (.xer), GanttProject (.gan), ProjectLibre (.pod) and Asta (.pp) files work too. Binary files are converted by the backend, which starts with <code className="rounded bg-slate-100 px-1">npm run dev</code> and needs Java.</li>
             <li>Dates in any common format are understood; for dates like 03/04/2025 you can choose day-first or month-first.</li>
           </ul>
+        </Card>
+
+        <Card id="team">
+          <CardHeader icon={ShieldCheck} title="Team, roles and timesheets" />
+          <div className="space-y-3 px-5 py-4 text-sm text-slate-600">
+            <p>
+              <strong>Admin</strong> is where administrators add people by email, pick their role
+              (Administrator, Project manager, Team member or Viewer), choose which projects they can
+              see, and set exceptions for one person. <em>Roles &amp; permissions</em> decides what each
+              role can do; <em>Rules</em> sets workspace policies such as timesheet approval, the daily
+              hour limit and allowed email domains. Every change is in the <em>Activity log</em>.
+            </p>
+            <p>
+              Use <strong>Preview</strong> next to a person to see the app exactly as they would. Tasks
+              are linked to people by the task's owner, so use the same name in both places.
+            </p>
+            <p>
+              <strong>Timesheet</strong>: clock in and out for attendance, start the timer on the task
+              you're working on (times come from the server, not your computer), add time manually if
+              your administrator allows it, and submit the week. Managers approve or send time back
+              under <em>Approvals</em>; <em>Team hours</em> shows everyone's week.
+            </p>
+            <p>
+              With Supabase connected, the first person to sign in becomes the administrator and
+              nobody else gets in until they are added. Without Supabase everything stays in this
+              browser, and people you add can be previewed but can't sign in.
+            </p>
+          </div>
         </Card>
 
         <Card id="claude">

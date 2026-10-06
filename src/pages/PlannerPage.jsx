@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { usePlannerStore } from "../store/usePlannerStore";
+import { useAccess, useVisibleProjects } from "../store/useAccessStore";
 import { useUiStore } from "../ui/uiStore";
 import { notify } from "../ui/feedback";
 import {
@@ -122,9 +123,11 @@ function OverviewTab({ project, metrics, tasks, onEdit, sprintCount }) {
                 {project.description || "No description yet. Add one so everyone knows what this project delivers."}
               </p>
             </div>
-            <Button icon={Pencil} onClick={onEdit}>
-              Edit details
-            </Button>
+            {onEdit ? (
+              <Button icon={Pencil} onClick={onEdit}>
+                Edit details
+              </Button>
+            ) : null}
           </div>
 
           <div className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
@@ -217,8 +220,10 @@ function OverviewTab({ project, metrics, tasks, onEdit, sprintCount }) {
 export default function PlannerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const projects = usePlannerStore((state) => state.projects);
+  const allProjects = usePlannerStore((state) => state.projects);
+  const projects = useVisibleProjects(allProjects);
   const tasks = usePlannerStore((state) => state.tasks);
+  const access = useAccess();
   const sprints = usePlannerStore((state) => state.sprints);
   const weeklyReports = usePlannerStore((state) => state.weeklyReports);
   const projectDocuments = usePlannerStore((state) => state.projectDocuments);
@@ -282,8 +287,12 @@ export default function PlannerPage() {
   const selectedProject = projects.find((project) => project.id === selectedProjectId) || null;
 
   const filteredTasks = useMemo(
-    () => (selectedProjectId ? tasks.filter((task) => task.projectId === selectedProjectId) : tasks),
-    [tasks, selectedProjectId]
+    () => {
+      if (selectedProjectId) return tasks.filter((task) => task.projectId === selectedProjectId);
+      const visible = new Set(projects.map((project) => project.id));
+      return tasks.filter((task) => visible.has(task.projectId));
+    },
+    [tasks, selectedProjectId, projects]
   );
   const filteredSprints = useMemo(
     () => (selectedProjectId ? sprints.filter((sprint) => sprint.projectId === selectedProjectId) : sprints),
@@ -326,13 +335,16 @@ export default function PlannerPage() {
     [activeTab, filteredTasks]
   );
 
+  // The grid only shows some tasks (one project, or the projects this person
+  // can see); merge its result into the full list so nothing else is lost.
   function mergeBackIntoAllTasks(updatedFilteredTasks) {
-    if (!selectedProjectId) {
-      actions.bulkReplaceTasks(updatedFilteredTasks);
-      return;
-    }
     const updatedMap = Object.fromEntries(updatedFilteredTasks.map((task) => [task.id, task]));
-    actions.bulkReplaceTasks(tasks.map((task) => updatedMap[task.id] || task));
+    const shownIds = new Set(filteredTasks.map((task) => task.id));
+    const known = new Set(tasks.map((task) => task.id));
+    actions.bulkReplaceTasks([
+      ...tasks.filter((task) => !shownIds.has(task.id) || updatedMap[task.id]).map((task) => updatedMap[task.id] || task),
+      ...updatedFilteredTasks.filter((task) => !known.has(task.id)),
+    ]);
   }
 
   function handleRecalculateSchedule() {
@@ -355,10 +367,14 @@ export default function PlannerPage() {
         title="No projects yet"
         description="The planner shows the tasks of your projects. Create one, or import an existing plan."
       >
-        <Button variant="primary" onClick={openNewProject}>Create a project</Button>
-        <Link to="/data" className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-          Import a file
-        </Link>
+        {access.permissions["projects.create"] ? (
+          <Button variant="primary" onClick={openNewProject}>Create a project</Button>
+        ) : null}
+        {access.permissions["data.import"] ? (
+          <Link to="/data" className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Import a file
+          </Link>
+        ) : null}
       </EmptyState>
     );
   }
@@ -398,22 +414,28 @@ export default function PlannerPage() {
                   ]
                     .filter(Boolean)
                     .join("  ·  ")
-                : `${projects.length} projects · ${tasks.length} tasks · Changes save automatically`}
+                : `${projects.length} project${projects.length === 1 ? "" : "s"} · ${filteredTasks.length} tasks · Changes save automatically`}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link to="/data" className={buttonClass("secondary")}>
-              <ArrowRightLeft className="h-4 w-4" /> Import / Export
-            </Link>
-            <Link
-              to={`/assistant${selectedProjectId ? `?projectId=${encodeURIComponent(selectedProjectId)}` : ""}`}
-              className={buttonClass("secondary")}
-            >
-              <Sparkles className="h-4 w-4 text-violet-600" /> Ask Claude
-            </Link>
-            <Button variant="primary" icon={ListPlus} onClick={() => openQuickTask(selectedProjectId)} data-testid="add-task">
-              Add task
-            </Button>
+            {access.permissions["data.import"] || access.permissions["data.export"] ? (
+              <Link to="/data" className={buttonClass("secondary")}>
+                <ArrowRightLeft className="h-4 w-4" /> Import / Export
+              </Link>
+            ) : null}
+            {access.permissions["ai.use"] ? (
+              <Link
+                to={`/assistant${selectedProjectId ? `?projectId=${encodeURIComponent(selectedProjectId)}` : ""}`}
+                className={buttonClass("secondary")}
+              >
+                <Sparkles className="h-4 w-4 text-violet-600" /> Ask Claude
+              </Link>
+            ) : null}
+            {access.permissions["tasks.create"] ? (
+              <Button variant="primary" icon={ListPlus} onClick={() => openQuickTask(selectedProjectId)} data-testid="add-task">
+                Add task
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -439,7 +461,7 @@ export default function PlannerPage() {
             project={selectedProject}
             metrics={metrics}
             tasks={filteredTasks}
-            onEdit={() => setEditingProject(true)}
+            onEdit={access.permissions["projects.edit"] ? () => setEditingProject(true) : undefined}
             sprintCount={filteredSprints.length}
           />
         ) : (

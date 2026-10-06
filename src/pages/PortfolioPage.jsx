@@ -26,6 +26,7 @@ import CentralizedManagerReportButton from "../components/CentralizedManagerRepo
 import ProjectForm from "../components/projects/ProjectForm";
 import AiInsightCard from "../components/ai/AiInsightCard";
 import { usePlannerStore } from "../store/usePlannerStore";
+import { useAccess, useVisibleProjects } from "../store/useAccessStore";
 import { useUiStore } from "../ui/uiStore";
 import { confirmAction, notify } from "../ui/feedback";
 import {
@@ -278,6 +279,8 @@ function NeedsAttention({ items }) {
 }
 
 function ProjectCard({ project, metrics, onEdit }) {
+  const { permissions } = useAccess();
+  const canManage = permissions["projects.edit"] || permissions["projects.create"] || permissions["projects.delete"];
   const deleteProject = usePlannerStore((state) => state.deleteProject);
   const duplicateProject = usePlannerStore((state) => state.duplicateProject);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -309,28 +312,36 @@ function ProjectCard({ project, metrics, onEdit }) {
         </Link>
         <div className="relative flex items-center gap-1">
           <Badge tone={tone}>{metrics.health.label}</Badge>
-          <button
-            type="button"
-            onClick={() => setMenuOpen((open) => !open)}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-            aria-label={`More actions for ${project.name}`}
-            aria-expanded={menuOpen}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+          {canManage ? (
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              aria-label={`More actions for ${project.name}`}
+              aria-expanded={menuOpen}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          ) : null}
           {menuOpen ? (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} aria-hidden />
               <div className="absolute right-0 top-8 z-20 w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-                <button type="button" onClick={() => { setMenuOpen(false); onEdit(project); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                  <Pencil className="h-4 w-4" /> Edit details
-                </button>
-                <button type="button" onClick={() => { setMenuOpen(false); duplicateProject(project.id); notify.success(`Copied "${project.name}".`); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                  <Copy className="h-4 w-4" /> Duplicate
-                </button>
-                <button type="button" onClick={handleDelete} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-700 hover:bg-red-50">
-                  <Trash2 className="h-4 w-4" /> Delete
-                </button>
+                {permissions["projects.edit"] ? (
+                  <button type="button" onClick={() => { setMenuOpen(false); onEdit(project); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <Pencil className="h-4 w-4" /> Edit details
+                  </button>
+                ) : null}
+                {permissions["projects.create"] ? (
+                  <button type="button" onClick={() => { setMenuOpen(false); duplicateProject(project.id); notify.success(`Copied "${project.name}".`); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <Copy className="h-4 w-4" /> Duplicate
+                  </button>
+                ) : null}
+                {permissions["projects.delete"] ? (
+                  <button type="button" onClick={handleDelete} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-700 hover:bg-red-50">
+                    <Trash2 className="h-4 w-4" /> Delete
+                  </button>
+                ) : null}
               </div>
             </>
           ) : null}
@@ -402,8 +413,14 @@ function ProjectCard({ project, metrics, onEdit }) {
 }
 
 export default function PortfolioPage() {
-  const projects = usePlannerStore((state) => state.projects);
-  const tasks = usePlannerStore((state) => state.tasks);
+  const allProjects = usePlannerStore((state) => state.projects);
+  const projects = useVisibleProjects(allProjects);
+  const allTasks = usePlannerStore((state) => state.tasks);
+  const tasks = useMemo(() => {
+    const ids = new Set(projects.map((project) => project.id));
+    return allTasks.filter((task) => ids.has(task.projectId));
+  }, [allTasks, projects]);
+  const { permissions } = useAccess();
   const updateProject = usePlannerStore((state) => state.updateProject);
   const openNewProject = useUiStore((state) => state.openNewProject);
   const navigate = useNavigate();
@@ -452,12 +469,16 @@ export default function PortfolioPage() {
         actions={
           <>
             <CentralizedManagerReportButton />
-            <Button icon={Sparkles} variant="ai" onClick={() => navigate("/assistant")}>
-              Ask Claude
-            </Button>
-            <Button icon={FolderPlus} variant="primary" onClick={openNewProject}>
-              New project
-            </Button>
+            {permissions["ai.use"] ? (
+              <Button icon={Sparkles} variant="ai" onClick={() => navigate("/assistant")}>
+                Ask Claude
+              </Button>
+            ) : null}
+            {permissions["projects.create"] ? (
+              <Button icon={FolderPlus} variant="primary" onClick={openNewProject}>
+                New project
+              </Button>
+            ) : null}
           </>
         }
       />

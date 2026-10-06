@@ -4,6 +4,8 @@ import {
   ArrowRightLeft,
   CircleHelp,
   ClipboardList,
+  Clock,
+  Eye,
   FolderKanban,
   HardDrive,
   LayoutDashboard,
@@ -12,11 +14,14 @@ import {
   Menu,
   Plus,
   Search,
+  ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
 
 import { cx } from "../../ui/primitives";
+import { ROLE_LABEL } from "../../domain/permissions";
+import { useAccess, useAccessStore } from "../../store/useAccessStore";
 import { useUiStore } from "../../ui/uiStore";
 import CommandPalette from "./CommandPalette";
 import NewProjectDialog from "../projects/NewProjectDialog";
@@ -40,12 +45,27 @@ export const NAV_ITEMS = [
     label: "Ask Claude",
     icon: Sparkles,
     description: "AI insights, risk analysis and report drafts",
+    requires: ["ai.use"],
+  },
+  {
+    to: "/timesheet",
+    label: "Timesheet",
+    icon: Clock,
+    description: "Clock in, track time on your tasks, submit and approve",
+    requires: ["timesheet.log", "timesheet.view_all", "timesheet.approve"],
   },
   {
     to: "/data",
     label: "Import & Export",
     icon: ArrowRightLeft,
     description: "Bring data in from any tool, back up or export",
+  },
+  {
+    to: "/admin",
+    label: "Admin",
+    icon: ShieldCheck,
+    description: "Users, roles and permissions, rules and the activity log",
+    requires: ["admin.users", "admin.roles_rules", "admin.audit"],
   },
   {
     to: "/help",
@@ -55,9 +75,35 @@ export const NAV_ITEMS = [
   },
 ];
 
+/** Navigation items the current person may open. */
+export function useNavItems() {
+  const { permissions } = useAccess();
+  return NAV_ITEMS.filter((item) => !item.requires || item.requires.some((key) => permissions[key]));
+}
+
+function PreviewBanner() {
+  const { previewing } = useAccess();
+  const setPreview = useAccessStore((state) => state.setPreview);
+  if (!previewing) return null;
+  return (
+    <div className="sticky top-0 z-30 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-amber-100 px-4 py-2 text-sm text-amber-900" role="status" data-testid="preview-banner">
+      <Eye className="h-4 w-4" aria-hidden />
+      <span>
+        Previewing as <strong>{previewing.displayName || previewing.email}</strong> ({ROLE_LABEL[previewing.role]}). You see
+        and can do only what they can.
+      </span>
+      <button type="button" onClick={() => setPreview("")} className="font-semibold underline underline-offset-2">
+        Exit preview
+      </button>
+    </div>
+  );
+}
+
 function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout }) {
   const openNewProject = useUiStore((state) => state.openNewProject);
   const openCommandPalette = useUiStore((state) => state.openCommandPalette);
+  const navItems = useNavItems();
+  const { permissions, realMember } = useAccess();
 
   return (
     <div className="flex h-full flex-col">
@@ -72,16 +118,18 @@ function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout 
       </Link>
 
       <div className="space-y-2 px-3">
-        <button
-          type="button"
-          onClick={() => {
-            onNavigate?.();
-            openNewProject();
-          }}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
-        >
-          <Plus className="h-4 w-4" aria-hidden /> New project
-        </button>
+        {permissions["projects.create"] ? (
+          <button
+            type="button"
+            onClick={() => {
+              onNavigate?.();
+              openNewProject();
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+          >
+            <Plus className="h-4 w-4" aria-hidden /> New project
+          </button>
+        ) : null}
 
         <button
           type="button"
@@ -100,7 +148,7 @@ function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout 
       </div>
 
       <nav aria-label="Main" className="mt-4 flex-1 space-y-1 px-3">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -155,8 +203,9 @@ function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout 
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
               {(userEmail || "?").slice(0, 1)}
             </div>
-            <div className="min-w-0 flex-1 truncate text-xs text-slate-600" title={userEmail}>
-              {userEmail}
+            <div className="min-w-0 flex-1 text-xs" title={userEmail}>
+              <div className="truncate font-medium text-slate-800">{realMember?.displayName || userEmail}</div>
+              {realMember ? <div className="truncate text-slate-500">{ROLE_LABEL[realMember.role]}</div> : null}
             </div>
             <button
               type="button"
@@ -209,6 +258,7 @@ export default function AppShell({ children, session, localMode, canSignIn, onLo
   }, [openCommandPalette]);
 
   const sidebarProps = { localMode, canSignIn, userEmail, onLogout };
+  const canCreateProjects = useAccess().permissions["projects.create"];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -261,15 +311,19 @@ export default function AppShell({ children, session, localMode, canSignIn, onLo
           >
             <Search className="h-5 w-5" />
           </button>
-          <button
-            type="button"
-            onClick={openNewProject}
-            className="rounded-lg bg-indigo-600 p-2 text-white hover:bg-indigo-700"
-            aria-label="New project"
-          >
-            <Plus className="h-5 w-5" />
-          </button>
+          {canCreateProjects ? (
+            <button
+              type="button"
+              onClick={openNewProject}
+              className="rounded-lg bg-indigo-600 p-2 text-white hover:bg-indigo-700"
+              aria-label="New project"
+            >
+              <Plus className="h-5 w-5" />
+            </button>
+          ) : null}
         </header>
+
+        <PreviewBanner />
 
         <main id="main" className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
           {children}

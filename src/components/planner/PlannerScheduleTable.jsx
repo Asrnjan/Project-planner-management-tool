@@ -1,3 +1,5 @@
+import { checkTaskEdit } from "../../domain/permissions";
+import { useAccess } from "../../store/useAccessStore";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildTaskIndexMaps,
@@ -190,7 +192,14 @@ const ScheduleRow = memo(function ScheduleRow({
   onAddSubtask,
   onDeleteRow,
   rowRef,
+  canEditAll = true,
+  canEditProgress = true,
+  canEditDates = true,
+  canCreate = true,
+  canDelete = true,
 }) {
+  const progressLocked = !canEditAll && !canEditProgress;
+  const datesLocked = !canEditAll && !canEditDates;
   const hasChildren = Boolean(childCountMap[task.id]);
   const isSummaryTask = Boolean(task.isSummaryTask || hasChildren);
   const depth = getTaskDepth(task, taskById);
@@ -365,7 +374,7 @@ const ScheduleRow = memo(function ScheduleRow({
           <GridInput
             value={draft.title}
             aria-label="Task name"
-            readOnly={false}
+            readOnly={!canEditAll}
             {...inputHandlers("title")}
             className={
               isSummaryTask
@@ -379,7 +388,7 @@ const ScheduleRow = memo(function ScheduleRow({
       <td className="px-1 py-1 align-middle">
         <GridSelect
           value={draft.sprintId}
-          disabled={isSummaryTask || !selectedProjectId}
+          disabled={isSummaryTask || !selectedProjectId || !canEditAll}
           onChange={(event) => changeSelect("sprintId", event.target.value)}
         >
           <option value="">No Sprint</option>
@@ -404,7 +413,7 @@ const ScheduleRow = memo(function ScheduleRow({
           <input
             type="checkbox"
             checked={Boolean(draft.isMilestone)}
-            disabled={isSummaryTask}
+            disabled={isSummaryTask || !canEditAll}
             onChange={(event) => toggleMilestone(event.target.checked)}
             className="h-3 w-3"
           />
@@ -416,7 +425,7 @@ const ScheduleRow = memo(function ScheduleRow({
         <GridInput
           type="number"
           min="1"
-          readOnly={isSummaryTask}
+          readOnly={isSummaryTask || datesLocked}
           value={draft.durationDays}
           {...inputHandlers("durationDays")}
         />
@@ -425,7 +434,7 @@ const ScheduleRow = memo(function ScheduleRow({
       <td className="px-1 py-1 align-middle">
         <GridInput
           type="date"
-          readOnly={isSummaryTask}
+          readOnly={isSummaryTask || datesLocked}
           value={draft.plannedStart}
           {...inputHandlers("plannedStart")}
         />
@@ -434,7 +443,7 @@ const ScheduleRow = memo(function ScheduleRow({
       <td className="px-1 py-1 align-middle">
         <GridInput
           type="date"
-          readOnly={isSummaryTask}
+          readOnly={isSummaryTask || datesLocked}
           value={draft.plannedEnd}
           {...inputHandlers("plannedEnd")}
         />
@@ -443,7 +452,7 @@ const ScheduleRow = memo(function ScheduleRow({
       <td className="px-1 py-1 align-middle">
         <GridInput
           value={draft.predecessorInput}
-          readOnly={isSummaryTask}
+          readOnly={isSummaryTask || !canEditAll}
           {...inputHandlers("predecessorInput")}
           placeholder={dependencyText || "e.g. 1,3"}
           aria-label={`Depends on, for ${draft.title}`}
@@ -458,7 +467,7 @@ const ScheduleRow = memo(function ScheduleRow({
       <td className="px-1 py-1 align-middle">
         <GridInput
           value={draft.owner}
-          readOnly={false}
+          readOnly={!canEditAll}
           {...inputHandlers("owner")}
         />
       </td>
@@ -468,7 +477,7 @@ const ScheduleRow = memo(function ScheduleRow({
           type="number"
           min="0"
           max="100"
-          readOnly={isSummaryTask}
+          readOnly={isSummaryTask || !canEditAll}
           value={draft.plannedProgress}
           {...inputHandlers("plannedProgress")}
         />
@@ -484,7 +493,7 @@ const ScheduleRow = memo(function ScheduleRow({
       <td className="px-1 py-1 align-middle">
         <GridSelect
           value={draft.status}
-          disabled={isSummaryTask}
+          disabled={isSummaryTask || progressLocked}
           className={statusSelectClass(draft.status)}
           onChange={(event) => changeSelect("status", event.target.value)}
         >
@@ -500,7 +509,7 @@ const ScheduleRow = memo(function ScheduleRow({
           type="number"
           min="0"
           max="100"
-          readOnly={isSummaryTask}
+          readOnly={isSummaryTask || progressLocked}
           value={draft.actualProgress}
           aria-label={`Percent done, for ${draft.title}`}
           title="How much of this task is actually done (0-100)"
@@ -510,7 +519,7 @@ const ScheduleRow = memo(function ScheduleRow({
 
       <td className="px-1 py-1 align-middle">
         <div className="flex items-center justify-end gap-1">
-          {!isSummaryTask ? (
+          {!isSummaryTask && !canEditAll ? null : !isSummaryTask ? (
             <IconActionButton
               type="button"
               title={
@@ -540,6 +549,7 @@ const ScheduleRow = memo(function ScheduleRow({
             </span>
           )}
 
+          {canCreate ? (
           <IconActionButton
             type="button"
             title={isSummaryTask ? "Add a subtask" : "Insert a task below"}
@@ -557,7 +567,9 @@ const ScheduleRow = memo(function ScheduleRow({
           >
             <Plus className="h-3.5 w-3.5" />
           </IconActionButton>
+          ) : null}
 
+          {canDelete ? (
           <IconActionButton
             type="button"
             title="Delete task"
@@ -569,6 +581,7 @@ const ScheduleRow = memo(function ScheduleRow({
           >
             <Trash2 className="h-3.5 w-3.5" />
           </IconActionButton>
+          ) : null}
         </div>
       </td>
     </tr>
@@ -585,6 +598,9 @@ export default function PlannerScheduleTable({
   selectedProjectId,
   focusedTaskId,
 }) {
+  const access = useAccess();
+  const canCreate = Boolean(access.permissions["tasks.create"]);
+  const canDelete = Boolean(access.permissions["tasks.delete"]);
   const { ordered } = useMemo(() => buildTaskIndexMaps(tasks), [tasks]);
 
   const [collapsedParents, setCollapsedParents] = useState({});
@@ -912,16 +928,20 @@ export default function PlannerScheduleTable({
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          <ToolbarButton variant="primary" onClick={handleAddRow} title="Add a task at the end">
-            <Plus className="h-3.5 w-3.5" /> Add row
-          </ToolbarButton>
-          <ToolbarButton onClick={() => handleInsertBelow()} title="Insert a task below the selected row">
-            Insert
-          </ToolbarButton>
-          <ToolbarButton onClick={() => handleAddSubtask(selectedRowId)} title="Add a subtask under the selected row">
-            Subtask
-          </ToolbarButton>
-          <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden />
+          {canCreate ? (
+            <>
+              <ToolbarButton variant="primary" onClick={handleAddRow} title="Add a task at the end">
+                <Plus className="h-3.5 w-3.5" /> Add row
+              </ToolbarButton>
+              <ToolbarButton onClick={() => handleInsertBelow()} title="Insert a task below the selected row">
+                Insert
+              </ToolbarButton>
+              <ToolbarButton onClick={() => handleAddSubtask(selectedRowId)} title="Add a subtask under the selected row">
+                Subtask
+              </ToolbarButton>
+              <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden />
+            </>
+          ) : null}
           <ToolbarButton onClick={expandAll}>Expand all</ToolbarButton>
           <ToolbarButton onClick={collapseAll}>Collapse all</ToolbarButton>
           <ToolbarButton onClick={handleUndo} title="Undo the last change (Ctrl + Z)">
@@ -995,6 +1015,11 @@ export default function PlannerScheduleTable({
                 onInsertBelow={handleInsertBelow}
                 onAddSubtask={handleAddSubtask}
                 onDeleteRow={handleDeleteRow}
+                canEditAll={checkTaskEdit(access, task, ["title"]).ok}
+                canEditProgress={checkTaskEdit(access, task, ["status"]).ok}
+                canEditDates={checkTaskEdit(access, task, ["plannedStart"]).ok}
+                canCreate={canCreate}
+                canDelete={canDelete}
                 rowRef={(element) => {
                   rowRefs.current[task.id] = element;
                 }}

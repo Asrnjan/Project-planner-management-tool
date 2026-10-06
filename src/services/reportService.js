@@ -64,9 +64,8 @@ export async function loadWeeklyReports(options = {}) {
     .select("*")
     .order("updated_at", { ascending: false });
 
-  if (!options.allUsers) {
-    query = query.eq("user_id", user.id);
-  }
+  // Row level security limits results to the projects this person can see.
+  void options;
 
   const { data, error } = await query;
 
@@ -97,8 +96,7 @@ export async function deleteWeeklyReportCloud(reportId) {
   const { error } = await supabase
     .from("weekly_reports")
     .delete()
-    .eq("id", reportId)
-    .eq("user_id", user.id);
+    .eq("id", reportId);
 
   if (error) {
     throw error;

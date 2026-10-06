@@ -1,3 +1,4 @@
+import { useCan } from "../../store/useAccessStore";
 import { useMemo, useState } from "react";
 import { AlertTriangle, CalendarSync, ChevronDown, ShieldAlert, ShieldCheck, Wrench } from "lucide-react";
 import { getPlannerQuickFixes } from "../../utils/planner";
@@ -23,6 +24,7 @@ export default function PlannerScheduleAssistPanel({
   onSelectConflictTask,
 }) {
   const [open, setOpen] = useState(false);
+  const canSchedule = useCan("projects.edit");
   const [panel, setPanel] = useState("conflicts");
   const quickFixes = useMemo(() => getPlannerQuickFixes(tasks), [tasks]);
 
@@ -63,7 +65,7 @@ export default function PlannerScheduleAssistPanel({
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className={canSchedule ? "flex items-center gap-2" : "hidden"}>
           <span className="hidden text-xs text-slate-500 sm:inline">Scheduling</span>
           <Segmented
             label="Scheduling mode"

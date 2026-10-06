@@ -1,3 +1,4 @@
+import { useCan } from "../../store/useAccessStore";
 import { useMemo, useState } from "react";
 import { ExternalLink, FileText, FolderOpen, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { confirmAction, notify } from "../../ui/feedback";
@@ -157,6 +158,7 @@ export default function ProjectDocumentsView({
   const [typeFilter, setTypeFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dialog, setDialog] = useState(null); // { document?: object }
+  const canEdit = useCan("documents.manage");
 
   const allDocuments = useMemo(
     () => (selectedProject ? projectDocuments.filter((doc) => doc.projectId === selectedProject.id) : []),
@@ -220,9 +222,11 @@ export default function ProjectDocumentsView({
         subtitle="Links to charters, specs, approvals and other project documents."
         icon={FileText}
         actions={
-          <Button size="sm" variant="primary" icon={Plus} onClick={() => setDialog({})}>
-            Add document
-          </Button>
+          canEdit ? (
+            <Button size="sm" variant="primary" icon={Plus} onClick={() => setDialog({})}>
+              Add document
+            </Button>
+          ) : null
         }
       >
         <div className="flex flex-wrap gap-2 border-b border-slate-100 px-5 py-3">
@@ -284,7 +288,7 @@ export default function ProjectDocumentsView({
               label: <span className="sr-only">Actions</span>,
               className: "w-px whitespace-nowrap text-right",
               render: (doc) => (
-                <span className="inline-flex gap-1">
+                <span className={canEdit ? "inline-flex gap-1" : "hidden"}>
                   <Button size="sm" variant="ghost" icon={Pencil} onClick={() => setDialog({ document: doc })} aria-label={`Edit ${doc.title}`}>
                     Edit
                   </Button>
