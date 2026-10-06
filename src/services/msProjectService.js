@@ -1,58 +1,60 @@
-const API_BASE_URL =
-  import.meta.env.VITE_MSPROJECT_BACKEND_URL || "http://localhost:5050";
+// Binary project files (.mpp, Primavera .xer, GanttProject .gan, ...) are
+// converted to Microsoft Project XML by the backend converter
+// (backend/converter.js). The browser then reads that XML itself.
+//
+// By default requests go to the same origin: in development Vite proxies
+// /api to the backend. Set VITE_MSPROJECT_BACKEND_URL to use a separately
+// hosted converter.
 
-export async function importMsProjectFile(file) {
+const API_BASE_URL = (import.meta.env.VITE_MSPROJECT_BACKEND_URL || "").replace(/\/$/, "");
+
+export const CONVERTER_EXTENSIONS = [".mpp", ".mpt", ".mpx", ".xer", ".pmxml", ".gan", ".pod", ".pp"];
+
+const XML_TIP =
+  "Tip: in Microsoft Project choose File > Save As > XML Format (*.xml) and import that file instead; it needs no server.";
+
+const NOT_RUNNING =
+  "The file converter isn't running. Start the app with `npm run dev` (it starts the converter too), or run `npm run dev:backend`.";
+
+/** Reports whether the converter is available and ready. Never throws. */
+export async function getConverterStatus() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/convert/status`);
+    const type = response.headers.get("content-type") || "";
+    if (!response.ok || !type.includes("json")) return { status: "unavailable" };
+    return await response.json();
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
+/**
+ * Converts a project file to Microsoft Project XML text.
+ * @param {File} file
+ * @returns {Promise<string>}
+ */
+export async function convertProjectFile(file) {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${API_BASE_URL}/api/import/msproject`, {
-    method: "POST",
-    body: formData,
-  });
-
-  const result = await response.json();
-
-  if (!response.ok) {
-    throw new Error(result.error || "MS Project import failed.");
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/convert`, { method: "POST", body: formData });
+  } catch {
+    throw new Error(`${NOT_RUNNING} ${XML_TIP}`);
   }
 
-  return result.plannerData;
-}
+  const type = response.headers.get("content-type") || "";
 
-export async function exportMsProjectXml(exportData) {
-  const response = await fetch(`${API_BASE_URL}/api/export/msproject`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(exportData),
-  });
-
-  if (!response.ok) {
-    let message = "MS Project export failed.";
-
-    try {
-      const result = await response.json();
-      message = result.error || message;
-    } catch {
-      // Ignore JSON parse failure
-    }
-
-    throw new Error(message);
+  if (response.ok && type.includes("xml")) {
+    return response.text();
   }
 
-  const blob = await response.blob();
-  const contentDisposition = response.headers.get("Content-Disposition") || "";
+  if (!type.includes("json")) {
+    // Static hosting (no converter) answers with the app's HTML page.
+    throw new Error(`${NOT_RUNNING} ${XML_TIP}`);
+  }
 
-  const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-  const filename = filenameMatch?.[1] || "planner-export.xml";
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-
-  a.href = url;
-  a.download = filename;
-  a.click();
-
-  URL.revokeObjectURL(url);
+  const result = await response.json().catch(() => ({}));
+  throw new Error(`${result.error || "The file could not be converted."} ${XML_TIP}`);
 }

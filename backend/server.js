@@ -1,15 +1,39 @@
+const path = require("path");
+
+// Settings come from the project's .env (and optionally backend/.env).
+// Variables already set in the environment win.
+const loadedEnvFiles = [];
+for (const envFile of [path.join(__dirname, ".env"), path.join(__dirname, "..", ".env")]) {
+  try {
+    process.loadEnvFile(envFile);
+    loadedEnvFiles.push(envFile);
+  } catch {
+    // File missing: fine.
+  }
+}
+
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
-const path = require("path");
-const { spawn } = require("child_process");
 const xml2js = require("xml2js");
+const {
+  CONVERTIBLE_EXTENSIONS,
+  convertToMsProjectXml,
+  ensureBuilt,
+  getConverterStatus,
+} = require("./converter");
 
 const app = express();
 const PORT = process.env.PORT || 5050;
 
-app.use(cors());
+// Set ALLOWED_ORIGINS (comma separated) when the backend is reachable from
+// the internet; by default any origin may call it (local development).
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : true }));
 app.use(express.json({ limit: "25mb" }));
 
 const uploadDir = path.join(__dirname, "uploads");
@@ -67,97 +91,6 @@ function makeTaskId(index) {
   return `task-import-${Date.now()}-${index}`;
 }
 
-function runMppToXmlConverter(inputPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    const javaProjectDir = path.join(__dirname, "java-mpxj");
-
-    const javaHome =
-      "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.18.8-hotspot";
-
-    const javaExe = path.join(javaHome, "bin", "java.exe");
-
-    const targetClasses = path.join(javaProjectDir, "target", "classes");
-    const dependencyDir = path.join(javaProjectDir, "target", "dependency");
-
-    if (!fs.existsSync(javaExe)) {
-      reject(new Error(`Java 17 not found at: ${javaExe}`));
-      return;
-    }
-
-    if (!fs.existsSync(targetClasses)) {
-      reject(
-        new Error(
-          "Java classes not found. Run Maven compile first inside backend\\java-mpxj."
-        )
-      );
-      return;
-    }
-
-    if (!fs.existsSync(dependencyDir)) {
-      reject(
-        new Error(
-          "Dependency jars not found. Run: C:\\Tools\\apache-maven-4.0.0-rc-5\\bin\\mvn.cmd -q compile dependency:copy-dependencies inside backend\\java-mpxj."
-        )
-      );
-      return;
-    }
-
-    const dependencyJars = fs
-      .readdirSync(dependencyDir)
-      .filter((file) => file.toLowerCase().endsWith(".jar"))
-      .map((file) => path.join(dependencyDir, file));
-
-    const classpath = [targetClasses, ...dependencyJars].join(";");
-
-    const args = [
-      "-cp",
-      classpath,
-      "com.planner.MppToXmlConverter",
-      inputPath,
-      outputPath,
-    ];
-
-    const child = spawn(javaExe, args, {
-      cwd: javaProjectDir,
-      shell: false,
-      windowsHide: true,
-      env: {
-        ...process.env,
-        JAVA_HOME: javaHome,
-        PATH: `${path.join(javaHome, "bin")};${process.env.PATH}`,
-      },
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    child.on("error", (error) => {
-      reject(new Error(`Could not run Java converter. ${error.message}`));
-    });
-
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(
-          new Error(
-            stderr ||
-              stdout ||
-              "MPP conversion failed. Please check if the .mpp file is valid."
-          )
-        );
-      }
-    });
-  });
-}
 
 function projectXmlToPlannerData(xmlObject) {
   const projectRoot = xmlObject.Project || xmlObject.project;
@@ -413,6 +346,51 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+// Converts .mpp (and other formats MPXJ reads) to Microsoft Project XML.
+// The browser parses the XML with the same code it uses for XML imports.
+app.get("/api/convert/status", (_req, res) => {
+  res.json(getConverterStatus());
+});
+
+app.post("/api/convert", upload.single("file"), async (req, res) => {
+  const uploadedPath = req.file?.path || "";
+  const outputPath = uploadedPath ? `${uploadedPath}.converted.xml` : "";
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded." });
+    }
+
+    const ext = path.extname(req.file.originalname || "").toLowerCase();
+    if (!CONVERTIBLE_EXTENSIONS.includes(ext)) {
+      return res.status(400).json({
+        error: `"${ext || "This"}" files can't be converted. Supported: ${CONVERTIBLE_EXTENSIONS.join(", ")}.`,
+      });
+    }
+
+    // The converter recognises formats by content, but MPXJ also looks at
+    // the extension for some readers, so keep it.
+    const inputPath = `${uploadedPath}${ext}`;
+    fs.renameSync(uploadedPath, inputPath);
+    req.file.path = inputPath;
+
+    await convertToMsProjectXml(inputPath, outputPath);
+
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.send(fs.readFileSync(outputPath, "utf8"));
+  } catch (error) {
+    const status = getConverterStatus();
+    res.status(status.status === "no-java" ? 503 : 422).json({
+      error: error.message || "Conversion failed.",
+      converter: status.status,
+    });
+  } finally {
+    for (const file of [req.file?.path, outputPath]) {
+      if (file && fs.existsSync(file)) fs.unlinkSync(file);
+    }
+  }
+});
+
 app.post("/api/import/msproject", upload.single("file"), async (req, res) => {
   let uploadedPath = "";
   let convertedXmlPath = "";
@@ -444,7 +422,7 @@ app.post("/api/import/msproject", upload.single("file"), async (req, res) => {
     if (ext === ".mpp") {
       convertedXmlPath = `${uploadedPath}.converted.xml`;
 
-      await runMppToXmlConverter(uploadedPath, convertedXmlPath);
+      await convertToMsProjectXml(uploadedPath, convertedXmlPath);
 
       plannerData = await readXmlFileAsPlannerData(convertedXmlPath);
     }
@@ -488,6 +466,61 @@ app.post("/api/export/msproject", async (req, res) => {
   }
 });
 
+// Claude endpoint for local development. In production the Netlify
+// Function in netlify/functions/ai.mjs serves the same route.
+let aiCorePromise = null;
+function loadAiCore() {
+  aiCorePromise = aiCorePromise || import("../server/ai/core.mjs");
+  return aiCorePromise;
+}
+
+app.get("/api/ai", async (_req, res) => {
+  try {
+    const { getAiStatus } = await loadAiCore();
+    res.json(getAiStatus());
+  } catch (error) {
+    res.status(500).json({ configured: false, error: error.message });
+  }
+});
+
+app.post("/api/ai", async (req, res) => {
+  try {
+    const { handleAiRequest } = await loadAiCore();
+    const { status, body } = await handleAiRequest({
+      body: req.body,
+      headers: { authorization: req.headers.authorization || "" },
+      ip: req.ip,
+    });
+    res.status(status).json(body);
+  } catch (error) {
+    console.error("AI route failed:", error);
+    res.status(500).json({ error: "AI request failed on the server." });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`MS Project backend running on http://localhost:${PORT}`);
+  console.log(
+    loadedEnvFiles.length
+      ? `Settings loaded from ${loadedEnvFiles.join(", ")}`
+      : `No .env file found (looked in ${path.join(__dirname, "..")} and ${__dirname})`
+  );
+  const apiKey = (process.env.ANTHROPIC_API_KEY || "").trim();
+  if (!apiKey) {
+    console.log("Claude: OFF - ANTHROPIC_API_KEY is not set in .env");
+  } else if (!apiKey.startsWith("sk-ant-")) {
+    console.log("Claude: key found but it doesn't start with sk-ant- (check for quotes or a copy mistake)");
+  } else {
+    const workspace = (process.env.ANTHROPIC_WORKSPACE_ID || "").trim();
+    console.log(
+      `Claude: ON (model ${process.env.AI_MODEL || "claude-opus-5-5"}${workspace ? `, workspace ${workspace}` : ""})`
+    );
+  }
+
+  // Prepare the converter in the background so the first .mpp import is fast.
+  if (process.env.SKIP_CONVERTER_BUILD !== "true") {
+    ensureBuilt().catch(() => {
+      // Already logged; imports will report the problem to the user.
+    });
+  }
 });

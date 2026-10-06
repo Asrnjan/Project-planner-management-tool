@@ -33,12 +33,15 @@ export function calculateStartDateFromEnd(end, durationDays) {
   return format(addDays(parsed, -(duration - 1)), "yyyy-MM-dd");
 }
 
+// Dates are the source of truth: a stored durationDays can be stale (for
+// example after an import or a date edit), so it is only used when the task
+// has no complete date range.
 export function getTaskDuration(task) {
-  const explicit = Number(task.durationDays || 0);
-  if (explicit > 0) return explicit;
-
   const derived = Number(calculateDurationDays(task.plannedStart, task.plannedEnd) || 0);
-  return derived > 0 ? derived : 1;
+  if (derived > 0) return derived;
+
+  const explicit = Number(task.durationDays || 0);
+  return explicit > 0 ? explicit : 1;
 }
 
 export function buildWbs(tasks) {
@@ -566,24 +569,43 @@ export function createGridDraftMap(tasks) {
 export function applySingleGridDraftToTask(task, draft, allTasks) {
   if (!draft) return { ...task };
 
-  const parsed = parsePredecessorInput(
-    draft.predecessorInput,
-    allTasks,
-    task.id
-  );
+  // Dependencies only change when the user typed something in the
+  // "Depends on" cell. A blank cell keeps the existing links; "none" clears
+  // them. (Re-parsing a blank draft used to wipe them on every edit.)
+  const predecessorText = String(draft.predecessorInput ?? "").trim();
+  let dependencyIds = Array.isArray(task.dependencyIds) ? task.dependencyIds : [];
+  if (/^(none|clear|-)$/i.test(predecessorText)) {
+    dependencyIds = [];
+  } else if (predecessorText) {
+    dependencyIds = parsePredecessorInput(predecessorText, allTasks, task.id).dependencyIds;
+  }
 
-  const durationDays = Math.max(1, Number(draft.durationDays || 1));
-  const startChanged =
-    String(draft.plannedStart || "") !== String(draft._originalPlannedStart || "");
-  const durationChanged =
-    Number(draft.durationDays || 1) !== Number(draft._originalDurationDays || 1);
+  const originalStart = draft._originalPlannedStart ?? task.plannedStart ?? "";
+  const originalEnd = draft._originalPlannedEnd ?? task.plannedEnd ?? "";
+  const originalDuration = Number(draft._originalDurationDays ?? getTaskDuration(task));
 
   let plannedStart = draft.plannedStart || "";
   let plannedEnd = draft.plannedEnd || "";
+  let durationDays = Math.max(1, Number(draft.durationDays || 1));
 
-  if ((startChanged || durationChanged) && plannedStart) {
+  const startChanged = String(plannedStart) !== String(originalStart);
+  const endChanged = String(plannedEnd) !== String(originalEnd);
+  const durationChanged = durationDays !== originalDuration;
+
+  if (endChanged && !startChanged && !durationChanged && plannedStart && plannedEnd) {
+    // Finish date edited: keep the start, recompute the duration.
+    if (plannedEnd < plannedStart) plannedEnd = plannedStart;
+    durationDays = Number(calculateDurationDays(plannedStart, plannedEnd)) || 1;
+  } else if ((startChanged || durationChanged) && plannedStart) {
     plannedEnd = calculateEndDateFromDuration(plannedStart, durationDays);
+  } else if (plannedStart && plannedEnd) {
+    durationDays = Number(calculateDurationDays(plannedStart, plannedEnd)) || durationDays;
   }
+
+  const actualProgress =
+    draft.actualProgress === undefined
+      ? Number(task.actualProgress || 0)
+      : Math.min(100, Math.max(0, Number(draft.actualProgress) || 0));
 
   return {
     ...task,
@@ -593,10 +615,11 @@ export function applySingleGridDraftToTask(task, draft, allTasks) {
     status: draft.status,
     plannedStart,
     plannedEnd,
-    dependencyIds: parsed.dependencyIds,
+    dependencyIds,
     dependencyRules: [],
     durationDays,
-    plannedProgress: Number(draft.plannedProgress || 0),
+    plannedProgress: Math.min(100, Math.max(0, Number(draft.plannedProgress || 0))),
+    actualProgress,
     isMilestone: Boolean(draft.isMilestone),
     isManualLocked: Boolean(draft.isManualLocked),
   };

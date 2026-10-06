@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { normalizePriority, normalizeTaskStatus } from "../domain/vocabulary";
+import { notify } from "../ui/feedback";
 import {
   loadPlannerData,
   savePlannerData,
@@ -25,6 +27,12 @@ import {
   saveProjectDocument,
   deleteProjectDocumentCloud,
 } from "../services/documentService";
+
+// True only when signed in with Supabase. In local mode every change stays
+// in this browser and no cloud request is made.
+let cloudSyncEnabled = false;
+
+export const LOCAL_USER_ID = "local";
 
 let cloudSaveTimer = null;
 let cloudSaveInProgress = false;
@@ -67,7 +75,7 @@ function normalizeProject(project = {}) {
 
     userId: project.userId || project.user_id || "",
 
-    name: project.name?.trim() || "Untitled Project",
+    name: String(project.name ?? "").trim() || "Untitled Project",
     owner: project.owner || "",
     description: project.description || "",
     status: project.status || "Active",
@@ -86,13 +94,31 @@ function normalizeSprint(sprint = {}) {
     id: sprint.id || makeId("sprint"),
     userId: sprint.userId || sprint.user_id || "",
     projectId: sprint.projectId || "",
-    name: sprint.name?.trim() || "Untitled Sprint",
+    name: String(sprint.name ?? "").trim() || "Untitled Sprint",
     startDate: sprint.startDate || "",
     endDate: sprint.endDate || "",
     goal: sprint.goal || "",
     createdAt: sprint.createdAt || timestamp,
     updatedAt: sprint.updatedAt || timestamp,
   };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Keeps durationDays consistent with the dates, which are what the timeline
+// and analytics read.
+function deriveDurationDays(task) {
+  const match = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+  if (match(task.plannedStart) && match(task.plannedEnd)) {
+    const days =
+      Math.round(
+        (Date.parse(`${task.plannedEnd}T00:00:00Z`) -
+          Date.parse(`${task.plannedStart}T00:00:00Z`)) /
+          DAY_MS
+      ) + 1;
+    if (days > 0) return days;
+  }
+  return Math.max(1, Number(task.durationDays || 1));
 }
 
 function normalizeTask(task = {}) {
@@ -108,10 +134,12 @@ function normalizeTask(task = {}) {
     dependencyRules: Array.isArray(task.dependencyRules)
       ? task.dependencyRules
       : [],
-    title: task.title?.trim() || "Untitled Task",
+    title: String(task.title ?? "").trim() || "Untitled Task",
     owner: task.owner || "",
-    priority: task.priority || "Medium",
-    status: task.status || "Not Started",
+    priority: normalizePriority(task.priority),
+    status: normalizeTaskStatus(task.status, task.actualProgress),
+    notes: task.notes || "",
+    tags: Array.isArray(task.tags) ? task.tags : [],
     plannedStart: task.plannedStart || "",
     plannedEnd: task.plannedEnd || "",
     actualStart: task.actualStart || "",
@@ -120,7 +148,7 @@ function normalizeTask(task = {}) {
     baselineEnd: task.baselineEnd || "",
     plannedProgress: Number(task.plannedProgress || 0),
     actualProgress: Number(task.actualProgress || 0),
-    durationDays: Number(task.durationDays || 1),
+    durationDays: deriveDurationDays(task),
     isMilestone: Boolean(task.isMilestone),
     isManualLocked: Boolean(task.isManualLocked),
     isSummaryTask: Boolean(task.isSummaryTask),
@@ -217,7 +245,7 @@ function normalizeProjectDocument(document = {}) {
     id: document.id || makeId("project-doc"),
     userId: document.userId || document.user_id || "",
     projectId: document.projectId || "",
-    title: document.title?.trim() || "Untitled Document",
+    title: String(document.title ?? "").trim() || "Untitled Document",
     documentType: document.documentType || "Other",
     version: document.version || "1.0",
     owner: document.owner || "",
@@ -433,15 +461,49 @@ function queueCloudWorkspaceSave(state, delay = 3000) {
   }, delay);
 }
 
+export function hasPendingCloudSave() {
+  return Boolean(cloudSaveTimer || cloudSaveInProgress);
+}
+
+/** Saves any debounced change right away, e.g. before signing out. */
+export async function flushPendingCloudSave() {
+  if (!cloudSyncEnabled || !cloudSaveTimer || !pendingCloudState) return;
+
+  window.clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = null;
+
+  const stateToSave = pendingCloudState;
+  pendingCloudState = null;
+
+  try {
+    await persistCurrentWorkspaceToCloud(stateToSave);
+  } catch (error) {
+    console.error("Failed to flush pending cloud save:", error);
+  }
+}
+
 function persistLocalAndQueueCloud(next, delay = 3000) {
   persist(next);
-  queueCloudWorkspaceSave(next, delay);
+
+  if (cloudSyncEnabled) {
+    queueCloudWorkspaceSave(next, delay);
+  }
+}
+
+function cloudOnly(promiseFactory, failureMessage) {
+  if (!cloudSyncEnabled) return;
+
+  promiseFactory().catch((error) => {
+    console.error(failureMessage, error);
+    notify.error(`${failureMessage} Your change is saved on this device.`);
+  });
 }
 
 const initialData = normalizePlannerData(loadPlannerData() || emptyPlannerData());
 
 export const usePlannerStore = create((set, get) => ({
   currentUserId: "",
+  storageMode: "local",
   isWorkspaceLoading: false,
   workspaceLoadError: "",
 
@@ -452,6 +514,23 @@ export const usePlannerStore = create((set, get) => ({
   baselineSnapshots: initialData.baselineSnapshots,
   weeklyReports: initialData.weeklyReports,
   projectDocuments: initialData.projectDocuments,
+
+  initializeLocalWorkspace: () => {
+    cloudSyncEnabled = false;
+    setActivePlannerUser(LOCAL_USER_ID);
+
+    const localData = normalizePlannerData(loadPlannerData(LOCAL_USER_ID));
+    const next = {
+      currentUserId: LOCAL_USER_ID,
+      storageMode: "local",
+      isWorkspaceLoading: false,
+      workspaceLoadError: "",
+      ...localData,
+    };
+
+    set(next);
+    return next;
+  },
 
   initializeWorkspaceForCurrentUser: async () => {
     set({
@@ -479,6 +558,7 @@ export const usePlannerStore = create((set, get) => ({
 
       setActivePlannerUser(user.id);
       clearLegacySharedPlannerData();
+      cloudSyncEnabled = true;
 
       const localData = normalizePlannerData(loadPlannerData(user.id));
 
@@ -494,6 +574,7 @@ export const usePlannerStore = create((set, get) => ({
 
       const next = {
         currentUserId: user.id,
+        storageMode: "cloud",
         isWorkspaceLoading: false,
         workspaceLoadError: "",
 
@@ -540,6 +621,8 @@ export const usePlannerStore = create((set, get) => ({
 
   clearWorkspaceForLogout: () => {
     const userId = get().currentUserId;
+    const wasCloud = cloudSyncEnabled;
+    cloudSyncEnabled = false;
 
     if (cloudSaveTimer) {
       window.clearTimeout(cloudSaveTimer);
@@ -548,7 +631,8 @@ export const usePlannerStore = create((set, get) => ({
 
     pendingCloudState = null;
 
-    if (userId) {
+    // Local mode data lives only in this browser, so it is kept on exit.
+    if (userId && wasCloud) {
       clearPlannerData(userId);
     }
 
@@ -565,6 +649,11 @@ export const usePlannerStore = create((set, get) => ({
   },
 
   loadCloudReportsAndDocuments: async () => {
+    if (!cloudSyncEnabled) {
+      const { weeklyReports, projectDocuments } = get();
+      return { weeklyReports, projectDocuments };
+    }
+
     const user = await getCurrentUser();
 
     if (!user) {
@@ -658,19 +747,74 @@ export const usePlannerStore = create((set, get) => ({
     });
   },
 
-  importPlannerData: (payload = {}) => {
-    set((state) => {
-      const normalizedPayload = normalizePlannerData(payload);
+  /**
+   * Loads imported data into the workspace.
+   * mode "merge" adds the imported records next to the existing ones.
+   * mode "replace" swaps the workspace for the imported data.
+   * Weekly reports and documents are kept unless the import carries them.
+   */
+  importPlannerData: (payload = {}, { mode = "replace" } = {}) => {
+    const before = get();
+    const imported = normalizePlannerData(payload);
+    const hasReports = Array.isArray(payload.weeklyReports);
+    const hasDocuments = Array.isArray(payload.projectDocuments);
 
-      const next = {
-        ...state,
-        ...normalizedPayload,
+    const mergeById = (existing, incoming) => {
+      const map = new Map(existing.map((item) => [item.id, item]));
+      incoming.forEach((item) => map.set(item.id, item));
+      return [...map.values()];
+    };
+
+    let next;
+
+    if (mode === "merge") {
+      next = {
+        ...before,
+        projects: mergeById(before.projects, imported.projects),
+        sprints: mergeById(before.sprints, imported.sprints),
+        tasks: mergeById(before.tasks, imported.tasks),
+        baselineSnapshots: mergeById(
+          before.baselineSnapshots,
+          imported.baselineSnapshots
+        ),
+        weeklyReports: mergeById(before.weeklyReports, imported.weeklyReports),
+        projectDocuments: mergeById(
+          before.projectDocuments,
+          imported.projectDocuments
+        ),
       };
+    } else {
+      next = {
+        ...before,
+        ...imported,
+        plannerSettings: payload.plannerSettings
+          ? imported.plannerSettings
+          : before.plannerSettings,
+        weeklyReports: hasReports ? imported.weeklyReports : before.weeklyReports,
+        projectDocuments: hasDocuments
+          ? imported.projectDocuments
+          : before.projectDocuments,
+      };
+    }
 
-      persistLocalAndQueueCloud(next, 5000);
+    set(next);
+    persistLocalAndQueueCloud(next, 1500);
 
-      return next;
-    });
+    // Replacing the workspace must also remove the old projects from the
+    // cloud, otherwise they come back on the next sign in.
+    if (mode !== "merge") {
+      const keptIds = new Set(next.projects.map((project) => project.id));
+      before.projects
+        .filter((project) => !keptIds.has(project.id))
+        .forEach((project) => {
+          cloudOnly(
+            () => deleteProjectCloud(project),
+            `Could not remove "${project.name}" from the cloud.`
+          );
+        });
+    }
+
+    return next;
   },
 
   addProject: (project) => {
@@ -723,6 +867,10 @@ export const usePlannerStore = create((set, get) => ({
 
     const latestState = get();
 
+    if (!cloudSyncEnabled) {
+      return newProject;
+    }
+
     saveProject({
       ...newProject,
       userId: latestState.currentUserId,
@@ -765,9 +913,8 @@ export const usePlannerStore = create((set, get) => ({
       .catch((error) => {
         console.error("Failed to save project to Supabase:", error);
 
-        alert(
-          error?.message ||
-            "Project was added locally, but failed to save in Supabase."
+        notify.error(
+          "The project was saved on this device but could not be synced to the cloud. It will retry on your next change."
         );
       });
 
@@ -870,6 +1017,8 @@ export const usePlannerStore = create((set, get) => ({
       return next;
     });
 
+    if (!cloudSyncEnabled) return;
+
     deleteProjectCloud(projectToDelete || projectId)
       .then(() => {
         const latest = get();
@@ -905,9 +1054,8 @@ export const usePlannerStore = create((set, get) => ({
       .catch((error) => {
         console.error("Failed to delete project from Supabase:", error);
 
-        alert(
-          error?.message ||
-            "Project was deleted locally, but failed to delete from Supabase."
+        notify.error(
+          "The project was removed here but could not be deleted from the cloud. Please try again later."
         );
       });
   },
@@ -1100,6 +1248,25 @@ export const usePlannerStore = create((set, get) => ({
     });
   },
 
+  /** Adds several tasks at once (AI plans, templates). */
+  addTasks: (newTasks = []) => {
+    set((state) => {
+      const next = {
+        ...state,
+        tasks: [
+          ...state.tasks,
+          ...newTasks.map((task) =>
+            normalizeTask({ ...task, userId: state.currentUserId })
+          ),
+        ],
+      };
+
+      persistLocalAndQueueCloud(next);
+
+      return next;
+    });
+  },
+
   updateTask: (taskId, updates) => {
     set((state) => {
       const next = {
@@ -1219,9 +1386,7 @@ export const usePlannerStore = create((set, get) => ({
 
       persist(next);
 
-      saveWeeklyReport(newReport).catch((error) => {
-        console.error("Failed to save weekly report to Supabase:", error);
-      });
+      cloudOnly(() => saveWeeklyReport(newReport), "Could not sync the weekly report.");
 
       return next;
     });
@@ -1254,9 +1419,7 @@ export const usePlannerStore = create((set, get) => ({
       persist(next);
 
       if (updatedReport) {
-        saveWeeklyReport(updatedReport).catch((error) => {
-          console.error("Failed to update weekly report in Supabase:", error);
-        });
+        cloudOnly(() => saveWeeklyReport(updatedReport), "Could not sync the weekly report.");
       }
 
       return next;
@@ -1274,9 +1437,7 @@ export const usePlannerStore = create((set, get) => ({
 
       persist(next);
 
-      deleteWeeklyReportCloud(reportId).catch((error) => {
-        console.error("Failed to delete weekly report from Supabase:", error);
-      });
+      cloudOnly(() => deleteWeeklyReportCloud(reportId), "Could not delete the weekly report from the cloud.");
 
       return next;
     });
@@ -1301,9 +1462,7 @@ export const usePlannerStore = create((set, get) => ({
 
       persist(next);
 
-      saveProjectDocument(newDocument).catch((error) => {
-        console.error("Failed to save project document to Supabase:", error);
-      });
+      cloudOnly(() => saveProjectDocument(newDocument), "Could not sync the document.");
 
       return next;
     });
@@ -1335,9 +1494,7 @@ export const usePlannerStore = create((set, get) => ({
       persist(next);
 
       if (updatedDocument) {
-        saveProjectDocument(updatedDocument).catch((error) => {
-          console.error("Failed to update project document in Supabase:", error);
-        });
+        cloudOnly(() => saveProjectDocument(updatedDocument), "Could not sync the document.");
       }
 
       return next;
@@ -1355,9 +1512,7 @@ export const usePlannerStore = create((set, get) => ({
 
       persist(next);
 
-      deleteProjectDocumentCloud(documentId).catch((error) => {
-        console.error("Failed to delete project document from Supabase:", error);
-      });
+      cloudOnly(() => deleteProjectDocumentCloud(documentId), "Could not delete the document from the cloud.");
 
       return next;
     });

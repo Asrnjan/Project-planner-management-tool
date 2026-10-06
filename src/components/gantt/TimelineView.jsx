@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Segmented } from "../../ui/primitives";
 import {
   addDays,
   differenceInCalendarDays,
@@ -289,7 +290,7 @@ export default function TimelineView({ tasks, onUpdateTask }) {
 
   if (!range) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-base font-semibold text-slate-900">
@@ -319,56 +320,33 @@ export default function TimelineView({ tasks, onUpdateTask }) {
   const columnWidth = getColumnWidth();
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-            <CalendarDays className="h-3.5 w-3.5" />
-            Gantt Timeline
-          </div>
-
-          <h3 className="mt-2 text-lg font-semibold tracking-tight text-slate-900">
-            Timeline View
-          </h3>
-
-          <p className="mt-1 text-xs text-slate-500">
-            Drag bars in Day view to move or resize planned dates.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="hidden rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 md:block">
-            {stats.total} tasks · {stats.completed} done · {stats.milestones}{" "}
-            milestones · {stats.overdue} overdue
-          </div>
-
-          <div className="flex gap-1.5 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
-            {["day", "week", "month"].map((level) => (
-              <button
-                key={level}
-                type="button"
-                onClick={() => setZoom(level)}
-                className={`rounded-xl px-3 py-1.5 text-xs font-semibold ${
-                  zoom === level
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {level.charAt(0).toUpperCase() + level.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500">
+          {stats.total} tasks · {stats.completed} done · {stats.milestones} milestones ·{" "}
+          <span className={stats.overdue ? "font-medium text-red-600" : ""}>{stats.overdue} overdue</span>
+          <span className="hidden text-slate-400 md:inline"> · Drag bars in Day view to move or resize them</span>
+        </p>
+        <Segmented
+          label="Zoom"
+          value={zoom}
+          onChange={setZoom}
+          options={[
+            { value: "day", label: "Day" },
+            { value: "week", label: "Week" },
+            { value: "month", label: "Month" },
+          ]}
+        />
       </div>
 
-      <div className="overflow-auto rounded-2xl border border-slate-200">
+      <div className="max-h-[calc(100vh-18rem)] min-h-[320px] overflow-auto rounded-xl border border-slate-200">
         <div
           className="grid min-w-max"
           style={{
             gridTemplateColumns: `260px repeat(${buckets.length}, ${columnWidth}px)`,
           }}
         >
-          <div className="sticky left-0 z-30 border-b border-slate-200 bg-white px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <div className="sticky left-0 top-0 z-40 border-b border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-600">
             Task
           </div>
 
@@ -378,7 +356,7 @@ export default function TimelineView({ tasks, onUpdateTask }) {
             return (
               <div
                 key={bucket.key}
-                className={`border-b border-slate-200 px-2 py-3 text-center text-[10px] font-semibold ${
+                className={`sticky top-0 z-30 border-b border-slate-200 px-2 py-3 text-center text-[10px] font-semibold ${
                   today
                     ? "bg-blue-50 text-blue-700"
                     : "bg-slate-50 text-slate-600"

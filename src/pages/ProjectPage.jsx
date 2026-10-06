@@ -16,7 +16,7 @@ export default function ProjectPage() {
   }, [projectId, navigate]);
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
       Opening project workspace...
     </div>
   );

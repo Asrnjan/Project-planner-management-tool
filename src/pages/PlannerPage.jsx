@@ -1,28 +1,46 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
+  ArrowRightLeft,
+  BarChart3,
   CalendarDays,
-  CheckCircle2,
+  CalendarRange,
   CircleUserRound,
   FileText,
   FolderKanban,
   KanbanSquare,
+  LayoutGrid,
+  ListPlus,
   ListTodo,
-  Milestone,
+  Pencil,
+  Sparkles,
+  Table2,
+  Users,
 } from "lucide-react";
 
 import { usePlannerStore } from "../store/usePlannerStore";
+import { useUiStore } from "../ui/uiStore";
+import { notify } from "../ui/feedback";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  Modal,
+  Panel,
+  ProgressBar,
+  Segmented,
+  StatStrip,
+  Tabs,
+  buttonClass,
+  cx,
+} from "../ui/primitives";
 
-import PlannerTabs from "../components/planner/PlannerTabs";
-import PlannerProjectFilter from "../components/planner/PlannerProjectFilter";
-import PlannerRiskSummary from "../components/planner/PlannerRiskSummary";
-import PlannerUnifiedDataTools from "../components/planner/PlannerUnifiedDataTools";
-
-import CollapsibleCard from "../components/common/AppCollapsibleCard";
-import SprintForm from "../components/sprints/SprintForm";
 import SprintList from "../components/sprints/SprintList";
+import ProjectForm from "../components/projects/ProjectForm";
+import AiInsightCard from "../components/ai/AiInsightCard";
 
-import { summarizeProject } from "../utils/calculations";
 import {
   getDependencyConflicts,
   getDependencyGraphStarter,
@@ -30,920 +48,454 @@ import {
   getProjectRiskSummary,
   recalculateMsProjectSchedule,
 } from "../utils/planner";
+import { HEALTH_TONE, computeProjectMetrics, computeWorkload, todayIso } from "../domain/analytics";
+import { isDoneStatus } from "../domain/vocabulary";
 
-const PlannerScheduleTable = lazy(() =>
-  import("../components/planner/PlannerScheduleTable")
-);
+const PlannerScheduleTable = lazy(() => import("../components/planner/PlannerScheduleTable"));
+const PlannerScheduleAssistPanel = lazy(() => import("../components/planner/PlannerScheduleAssistPanel"));
+const PlannerBoardView = lazy(() => import("../components/planner/PlannerBoardView"));
+const PlannerTimelineView = lazy(() => import("../components/gantt/TimelineView"));
+const PlannerResourcesView = lazy(() => import("../components/planner/PlannerResourcesView"));
+const PlannerRelationshipPanel = lazy(() => import("../components/planner/PlannerRelationshipPanel"));
+const ProjectDocumentsView = lazy(() => import("../components/documents/ProjectDocumentsView"));
+const WeeklyCeoReportView = lazy(() => import("../components/reports/WeeklyCeoReportView"));
+const PlannerReportsView = lazy(() => import("../components/planner/PlannerReportsView"));
+const PlannerBaselinePanel = lazy(() => import("../components/planner/PlannerBaselinePanel"));
+const PlannerDependencyGraphStarter = lazy(() => import("../components/planner/PlannerDependencyGraphStarter"));
 
-const PlannerScheduleAssistPanel = lazy(() =>
-  import("../components/planner/PlannerScheduleAssistPanel")
-);
-
-const PlannerBoardView = lazy(() =>
-  import("../components/planner/PlannerBoardView")
-);
-
-const PlannerTimelineView = lazy(() =>
-  import("../components/gantt/TimelineView")
-);
-
-const PlannerResourcesView = lazy(() =>
-  import("../components/planner/PlannerResourcesView")
-);
-
-const PlannerRelationshipPanel = lazy(() =>
-  import("../components/planner/PlannerRelationshipPanel")
-);
-
-const ProjectDocumentsView = lazy(() =>
-  import("../components/documents/ProjectDocumentsView")
-);
-
-const WeeklyCeoReportView = lazy(() =>
-  import("../components/reports/WeeklyCeoReportView")
-);
-
-const PlannerReportsView = lazy(() =>
-  import("../components/planner/PlannerReportsView")
-);
-
-const PlannerBaselinePanel = lazy(() =>
-  import("../components/planner/PlannerBaselinePanel")
-);
-
-const PlannerDependencyGraphStarter = lazy(() =>
-  import("../components/planner/PlannerDependencyGraphStarter")
-);
-
-const PlannerDependencyGraphVisual = lazy(() =>
-  import("../components/planner/PlannerDependencyGraphVisual")
-);
-
-const TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "schedule", label: "Schedule" },
-  { key: "board", label: "Board" },
-  { key: "timeline", label: "Timeline" },
-  { key: "sprints", label: "Sprints" },
-  { key: "resources", label: "Resources" },
-  { key: "documents", label: "Documents" },
-  { key: "reports", label: "Reports" },
+export const PLANNER_TABS = [
+  { key: "overview", label: "Overview", icon: LayoutGrid, hint: "Project summary, health, milestones and Claude's briefing." },
+  { key: "schedule", label: "Schedule", icon: Table2, hint: "Edit tasks like a spreadsheet: dates, owners, subtasks and dependencies. Changes save when you leave a cell." },
+  { key: "board", label: "Board", icon: KanbanSquare, hint: "Drag cards between columns to change their status." },
+  { key: "timeline", label: "Timeline", icon: CalendarRange, hint: "Gantt chart of every dated task. Drag bars to reschedule." },
+  { key: "sprints", label: "Sprints", icon: ListTodo, hint: "Time-boxed iterations. Create sprints, then assign tasks to them in the Schedule." },
+  { key: "resources", label: "People", icon: Users, hint: "Who is working on what, and how tasks depend on each other." },
+  { key: "documents", label: "Documents", icon: FileText, hint: "Keep links to charters, specs and sign-offs with the project." },
+  { key: "reports", label: "Reports", icon: BarChart3, hint: "Weekly status reports (Claude can draft them), baselines and dependency analysis." },
 ];
 
-const emptyProjectEditForm = {
-  name: "",
-  owner: "",
-  status: "Active",
-  startDate: "",
-  targetEndDate: "",
-  description: "",
-};
-
-function getFormattedNow() {
-  return new Date().toLocaleString();
-}
-
-function TabLoadingBox({ label = "Loading section..." }) {
+function TabLoading() {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm font-medium text-slate-500 shadow-sm">
-      {label}
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600" />
+      Loading...
     </div>
   );
 }
 
-function MetricCard({ label, value, subtitle }) {
+function formatDate(iso) {
+  if (!iso) return "—";
+  const date = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function SelectProjectNotice({ what }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-        {label}
-      </div>
-
-      <div className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
-        {value}
-      </div>
-
-      {subtitle ? (
-        <div className="mt-0.5 text-[11px] text-slate-500">{subtitle}</div>
-      ) : null}
-    </div>
+    <EmptyState
+      icon={FolderKanban}
+      title="Pick a project first"
+      description={`${what} belong to a single project. Choose one from "Project" at the top of the page.`}
+    />
   );
 }
 
-function CompactStat({ label, value, icon: Icon }) {
+function OverviewTab({ project, metrics, tasks, onEdit, sprintCount }) {
+  const milestones = tasks
+    .filter((task) => task.isMilestone)
+    .sort((a, b) => String(a.plannedStart || a.plannedEnd).localeCompare(String(b.plannedStart || b.plannedEnd)));
+  const workload = computeWorkload(tasks).slice(0, 6);
+
   return (
-    <div className="rounded-2xl bg-slate-50 p-3">
-      <div className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
-        {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
-        {label}
-      </div>
-
-      <div className="mt-1 text-lg font-semibold tracking-tight text-slate-900">
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function SaveStatusCard({ lastUpdatedAt }) {
-  return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 shadow-sm">
-      <div className="flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-          <CheckCircle2 className="h-4 w-4" />
-        </div>
-
-        <div className="min-w-0">
-          <div className="text-xs font-semibold text-emerald-900">
-            Auto saved
+    <div className="grid items-start gap-4 xl:grid-cols-[1.2fr_1fr]">
+      <div className="space-y-4">
+        <Card className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-semibold text-slate-900">{project.name}</h2>
+                <Badge tone={HEALTH_TONE[metrics.health.level]}>{metrics.health.label}</Badge>
+                <Badge>{project.status}</Badge>
+              </div>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                {project.description || "No description yet. Add one so everyone knows what this project delivers."}
+              </p>
+            </div>
+            <Button icon={Pencil} onClick={onEdit}>
+              Edit details
+            </Button>
           </div>
 
-          <div className="mt-0.5 truncate text-[11px] text-emerald-700">
-            Last activity: {lastUpdatedAt}
+          <div className="mt-4 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
+            <div className="flex items-center gap-2">
+              <CircleUserRound className="h-4 w-4 text-slate-400" /> {project.owner || "No owner"}
+            </div>
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-slate-400" /> {formatDate(project.startDate)} → {formatDate(project.targetEndDate)}
+            </div>
+            <div className="flex items-center gap-2">
+              <CalendarRange className="h-4 w-4 text-slate-400" /> Forecast {formatDate(metrics.forecastFinish)}
+              {metrics.slipDays > 0 ? <Badge tone="red">+{metrics.slipDays}d</Badge> : null}
+            </div>
           </div>
+
+          <div className="mt-5">
+            <div className="mb-1 flex justify-between text-xs text-slate-500">
+              <span>{metrics.percentComplete}% of the work is done</span>
+              <span>{metrics.percentPlanned}% should be done by today</span>
+            </div>
+            <ProgressBar value={metrics.percentComplete} label="Project progress" />
+          </div>
+
+          <StatStrip
+            className="mt-5"
+            items={[
+              { label: "Tasks", value: metrics.total },
+              { label: "Done", value: metrics.done, tone: "text-emerald-700" },
+              { label: "Overdue", value: metrics.overdue, tone: metrics.overdue ? "text-red-600" : undefined },
+              { label: "Blocked", value: metrics.blocked, tone: metrics.blocked ? "text-amber-600" : undefined },
+            ]}
+          />
+          <StatStrip
+            className="mt-2"
+            items={[
+              { label: "Due in 7 days", value: metrics.dueSoon },
+              { label: "Unassigned", value: metrics.unassigned },
+              { label: "Schedule index", value: metrics.spi ?? "—", tone: metrics.spi !== null && metrics.spi < 0.92 ? "text-amber-600" : undefined },
+              { label: "Sprints", value: sprintCount },
+            ]}
+          />
+          <p className="mt-2 text-[11px] text-slate-400">
+            Schedule index = work done ÷ work planned by today. 1.0 is on plan; below 0.9 is behind.
+          </p>
+        </Card>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader title="Milestones" subtitle="Key dates" />
+            <ul className="max-h-64 space-y-1 overflow-y-auto px-5 py-3 text-sm">
+              {milestones.length === 0 ? (
+                <li className="text-slate-500">No milestones yet. Tick "Milestone" on a task in the Schedule.</li>
+              ) : (
+                milestones.slice(0, 8).map((task) => (
+                  <li key={task.id} className="flex items-center justify-between gap-2">
+                    <span className={cx("truncate", isDoneStatus(task.status) ? "text-slate-400 line-through" : "text-slate-800")}>
+                      ◆ {task.title}
+                    </span>
+                    <span className="shrink-0 text-xs text-slate-500">{formatDate(task.plannedStart || task.plannedEnd)}</span>
+                  </li>
+                ))
+              )}
+            </ul>
+          </Card>
+          <Card>
+            <CardHeader title="Workload" subtitle="Open tasks per person" />
+            <ul className="space-y-2 px-5 py-3 text-sm">
+              {workload.length === 0 ? (
+                <li className="text-slate-500">No open tasks.</li>
+              ) : (
+                workload.map((entry) => (
+                  <li key={entry.owner} className="flex items-center justify-between gap-2">
+                    <span className={cx("truncate", entry.owner === "Unassigned" ? "italic text-slate-400" : "text-slate-800")}>{entry.owner}</span>
+                    <span className="flex shrink-0 items-center gap-1.5 text-xs">
+                      <Badge>{entry.open} open</Badge>
+                      {entry.overdue ? <Badge tone="red">{entry.overdue} late</Badge> : null}
+                    </span>
+                  </li>
+                ))
+              )}
+            </ul>
+          </Card>
         </div>
       </div>
+      <AiInsightCard scope="project" projectId={project.id} />
     </div>
-  );
-}
-
-function EmptyProjectNotice() {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-        <ListTodo className="h-3.5 w-3.5" />
-        Sprints
-      </div>
-
-      <h3 className="mt-2 text-lg font-semibold tracking-tight text-slate-900">
-        Select a project to manage sprints
-      </h3>
-
-      <p className="mt-1 text-sm text-slate-500">
-        Sprint creation and sprint management work only for a single selected
-        project.
-      </p>
-    </div>
-  );
-}
-
-function ProjectEditForm({
-  form,
-  onChange,
-  onSubmit,
-  onCancel,
-  isSaving = false,
-}) {
-  function handleChange(event) {
-    const { name, value } = event.target;
-
-    onChange((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  }
-
-  function handleSubmit(event) {
-    event.preventDefault();
-    onSubmit();
-  }
-
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="rounded-3xl border border-blue-200 bg-blue-50 p-4"
-    >
-      <div className="mb-4">
-        <h3 className="text-base font-semibold tracking-tight text-slate-900">
-          Edit Project Details
-        </h3>
-
-        <p className="mt-1 text-xs text-slate-600">
-          Update the imported or created project information here.
-        </p>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Project Name
-          </label>
-
-          <input
-            name="name"
-            value={form.name}
-            onChange={handleChange}
-            placeholder="Project name"
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Owner
-          </label>
-
-          <input
-            name="owner"
-            value={form.owner}
-            onChange={handleChange}
-            placeholder="Project owner"
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Status
-          </label>
-
-          <select
-            name="status"
-            value={form.status}
-            onChange={handleChange}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
-          >
-            <option value="Planned">Planned</option>
-            <option value="Active">Active</option>
-            <option value="On Track">On Track</option>
-            <option value="At Risk">At Risk</option>
-            <option value="Delayed">Delayed</option>
-            <option value="On Hold">On Hold</option>
-            <option value="Completed">Completed</option>
-            <option value="Archived">Archived</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Start Date
-          </label>
-
-          <input
-            name="startDate"
-            type="date"
-            value={form.startDate}
-            onChange={handleChange}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Target End Date
-          </label>
-
-          <input
-            name="targetEndDate"
-            type="date"
-            value={form.targetEndDate}
-            onChange={handleChange}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
-          />
-        </div>
-
-        <div className="xl:col-span-2">
-          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Description
-          </label>
-
-          <textarea
-            name="description"
-            value={form.description}
-            onChange={handleChange}
-            placeholder="Project description"
-            className="min-h-[110px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400"
-          />
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-        >
-          Cancel
-        </button>
-
-        <button
-          type="submit"
-          disabled={isSaving}
-          className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isSaving ? "Saving..." : "Save Project Details"}
-        </button>
-      </div>
-    </form>
   );
 }
 
 export default function PlannerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const {
-    tasks,
-    projects,
-    sprints,
-    weeklyReports,
-    projectDocuments,
-    loadCloudReportsAndDocuments,
+  const projects = usePlannerStore((state) => state.projects);
+  const tasks = usePlannerStore((state) => state.tasks);
+  const sprints = usePlannerStore((state) => state.sprints);
+  const weeklyReports = usePlannerStore((state) => state.weeklyReports);
+  const projectDocuments = usePlannerStore((state) => state.projectDocuments);
+  const plannerSettings = usePlannerStore((state) => state.plannerSettings);
+  const baselineSnapshots = usePlannerStore((state) => state.baselineSnapshots);
+  const actions = usePlannerStore.getState();
+  const loadCloudReportsAndDocuments = usePlannerStore((state) => state.loadCloudReportsAndDocuments);
+  const openQuickTask = useUiStore((state) => state.openQuickTask);
+  const openNewProject = useUiStore((state) => state.openNewProject);
 
-    addTask,
-    updateTask,
-    deleteTask,
-    bulkReplaceTasks,
+  const requestedProjectId = searchParams.get("projectId") || "";
+  const selectedProjectId = projects.some((project) => project.id === requestedProjectId) ? requestedProjectId : "";
+  const tabParam = searchParams.get("tab") || "";
+  const activeTab = PLANNER_TABS.some((tab) => tab.key === tabParam)
+    ? tabParam
+    : selectedProjectId
+    ? "overview"
+    : "schedule";
+  const focusedTaskId = searchParams.get("taskId") || "";
+  const viewParam = searchParams.get("view") || "";
+  const reportView = ["analysis", "baselines", "dependencies"].includes(viewParam) ? viewParam : "status";
 
-    plannerSettings,
-    setSchedulingMode,
+  // Overview, sprints, documents and status reports only make sense for one project, so open
+  // the first project instead of an empty "pick a project" screen.
+  const needsSingleProject =
+    ["overview", "sprints", "documents"].includes(activeTab) || (activeTab === "reports" && reportView === "status");
+  const fallbackProjectId = !selectedProjectId && needsSingleProject ? projects[0]?.id || "" : "";
+  useEffect(() => {
+    if (!fallbackProjectId) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("projectId", fallbackProjectId);
+        return next;
+      },
+      { replace: true }
+    );
+  }, [fallbackProjectId, setSearchParams]);
 
-    baselineSnapshots,
-    createBaselineSnapshot,
-    importPlannerData,
-
-    updateProject,
-
-    addSprint,
-    updateSprint,
-    deleteSprint,
-
-    addWeeklyReport,
-    updateWeeklyReport,
-    deleteWeeklyReport,
-
-    addProjectDocument,
-    updateProjectDocument,
-    deleteProjectDocument,
-  } = usePlannerStore();
-
-  const projectIdFromUrl = searchParams.get("projectId") || "";
-  const tabFromUrl = searchParams.get("tab") || "";
-
-  const [activeTab, setActiveTab] = useState(tabFromUrl || "schedule");
-  const [selectedProjectId, setSelectedProjectId] = useState(projectIdFromUrl);
-  const [selectedRelationshipTaskId, setSelectedRelationshipTaskId] =
-    useState("");
-  const [focusedTaskId, setFocusedTaskId] = useState("");
-
-  const [isProjectEditOpen, setIsProjectEditOpen] = useState(false);
-  const [projectEditForm, setProjectEditForm] = useState(emptyProjectEditForm);
-  const [projectEditSaving, setProjectEditSaving] = useState(false);
-
-  const [statusMessage, setStatusMessage] = useState("");
-  const [statusError, setStatusError] = useState("");
-  const [lastUpdatedAt, setLastUpdatedAt] = useState(getFormattedNow());
+  const [selectedRelationshipTaskId, setSelectedRelationshipTaskId] = useState("");
+  const [editingProject, setEditingProject] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       loadCloudReportsAndDocuments().catch((error) => {
-        console.error("Failed to load reports/documents from Supabase:", error);
-        setStatusError(error.message || "Failed to load reports/documents.");
+        console.error("Failed to load reports/documents:", error);
       });
     }, 800);
-
     return () => window.clearTimeout(timer);
   }, [loadCloudReportsAndDocuments]);
 
-  useEffect(() => {
-    setSelectedProjectId(projectIdFromUrl);
-  }, [projectIdFromUrl]);
-
-  useEffect(() => {
-    if (tabFromUrl) {
-      setActiveTab(tabFromUrl);
-    }
-  }, [tabFromUrl]);
-
-  useEffect(() => {
+  function updateParams(changes) {
     const next = new URLSearchParams(searchParams);
-
-    if (selectedProjectId) {
-      next.set("projectId", selectedProjectId);
-    } else {
-      next.delete("projectId");
-    }
-
-    if (activeTab && activeTab !== "schedule") {
-      next.set("tab", activeTab);
-    } else {
-      next.delete("tab");
-    }
-
-    const currentString = searchParams.toString();
-    const nextString = next.toString();
-
-    if (currentString !== nextString) {
-      setSearchParams(next, { replace: true });
-    }
-  }, [selectedProjectId, activeTab, searchParams, setSearchParams]);
-
-  const filteredTasks = useMemo(() => {
-    if (!selectedProjectId) return tasks;
-    return tasks.filter((task) => task.projectId === selectedProjectId);
-  }, [tasks, selectedProjectId]);
-
-  const filteredSprints = useMemo(() => {
-    if (!selectedProjectId) return sprints;
-    return sprints.filter((sprint) => sprint.projectId === selectedProjectId);
-  }, [sprints, selectedProjectId]);
-
-  const filteredWeeklyReports = useMemo(() => {
-    if (!selectedProjectId) return weeklyReports;
-    return weeklyReports.filter(
-      (report) => report.projectId === selectedProjectId
-    );
-  }, [weeklyReports, selectedProjectId]);
-
-  const filteredProjectDocuments = useMemo(() => {
-    if (!selectedProjectId) return projectDocuments;
-    return projectDocuments.filter(
-      (document) => document.projectId === selectedProjectId
-    );
-  }, [projectDocuments, selectedProjectId]);
-
-  const selectedProject = useMemo(() => {
-    if (!selectedProjectId) return null;
-
-    return (
-      projects.find(
-        (project) =>
-          project.id === selectedProjectId ||
-          project.cloudId === selectedProjectId ||
-          project.dbId === selectedProjectId
-      ) || null
-    );
-  }, [projects, selectedProjectId]);
-
-  useEffect(() => {
-    if (!selectedProject) {
-      setProjectEditForm(emptyProjectEditForm);
-      setIsProjectEditOpen(false);
-      return;
-    }
-
-    setProjectEditForm({
-      name: selectedProject.name || "",
-      owner: selectedProject.owner || "",
-      status: selectedProject.status || "Active",
-      startDate: selectedProject.startDate || "",
-      targetEndDate: selectedProject.targetEndDate || "",
-      description: selectedProject.description || "",
+    Object.entries(changes).forEach(([key, value]) => {
+      if (value) next.set(key, value);
+      else next.delete(key);
     });
-  }, [selectedProject?.id]);
+    setSearchParams(next, { replace: true });
+  }
 
-  useEffect(() => {
-    setLastUpdatedAt(getFormattedNow());
-  }, [projects, tasks, sprints, weeklyReports, projectDocuments]);
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) || null;
 
-  const summary = useMemo(() => summarizeProject(filteredTasks), [filteredTasks]);
+  const filteredTasks = useMemo(
+    () => (selectedProjectId ? tasks.filter((task) => task.projectId === selectedProjectId) : tasks),
+    [tasks, selectedProjectId]
+  );
+  const filteredSprints = useMemo(
+    () => (selectedProjectId ? sprints.filter((sprint) => sprint.projectId === selectedProjectId) : sprints),
+    [sprints, selectedProjectId]
+  );
+  const filteredWeeklyReports = useMemo(
+    () => (selectedProjectId ? weeklyReports.filter((report) => report.projectId === selectedProjectId) : weeklyReports),
+    [weeklyReports, selectedProjectId]
+  );
+  const filteredProjectDocuments = useMemo(
+    () => (selectedProjectId ? projectDocuments.filter((doc) => doc.projectId === selectedProjectId) : projectDocuments),
+    [projectDocuments, selectedProjectId]
+  );
+
+  const today = todayIso();
+  const metrics = useMemo(
+    () => (selectedProject ? computeProjectMetrics(selectedProject, tasks, today) : null),
+    [selectedProject, tasks, today]
+  );
 
   const schedulingMode = plannerSettings?.schedulingMode || "manual";
 
-  const counts = useMemo(() => {
-    const notStarted = filteredTasks.filter(
-      (task) => task.status === "Not Started"
-    ).length;
-
-    const inProgress = filteredTasks.filter(
-      (task) => task.status === "In Progress"
-    ).length;
-
-    const done = filteredTasks.filter((task) => task.status === "Done").length;
-
-    const blocked = filteredTasks.filter(
-      (task) => task.status === "Blocked"
-    ).length;
-
-    const owners = [
-      ...new Set(filteredTasks.map((task) => task.owner).filter(Boolean)),
-    ].length;
-
-    const milestoneCount = filteredTasks.filter(
-      (task) => task.isMilestone
-    ).length;
-
-    return {
-      notStarted,
-      inProgress,
-      done,
-      blocked,
-      owners,
-      milestoneCount,
-    };
-  }, [filteredTasks]);
-
-  const riskSummary = useMemo(() => {
-    if (activeTab !== "overview" && activeTab !== "schedule") {
-      return {
-        overdue: [],
-        blocked: [],
-        missingDates: [],
-        missingOwners: [],
-        summaryText: "",
-      };
-    }
-
-    return getProjectRiskSummary(filteredTasks);
-  }, [activeTab, filteredTasks]);
-
-  const conflicts = useMemo(() => {
-    if (activeTab !== "schedule") return [];
-    return getDependencyConflicts(filteredTasks);
-  }, [activeTab, filteredTasks]);
-
-  const relationship = useMemo(() => {
-    if (activeTab !== "resources") return null;
-    return getTaskRelationships(selectedRelationshipTaskId, filteredTasks);
-  }, [activeTab, selectedRelationshipTaskId, filteredTasks]);
-
-  const dependencyGraph = useMemo(() => {
-    if (activeTab !== "reports") {
-      return {
-        nodes: [],
-        edges: [],
-        starters: [],
-        missingDependencies: [],
-      };
-    }
-
-    return getDependencyGraphStarter(filteredTasks);
-  }, [activeTab, filteredTasks]);
-
-  const exportData = useMemo(
-    () => ({
-      projects,
-      tasks,
-      plannerSettings,
-      baselineSnapshots,
-      sprints,
-      weeklyReports,
-      projectDocuments,
-    }),
-    [
-      projects,
-      tasks,
-      plannerSettings,
-      baselineSnapshots,
-      sprints,
-      weeklyReports,
-      projectDocuments,
-    ]
+  const riskSummary = useMemo(
+    () => (activeTab === "schedule" ? getProjectRiskSummary(filteredTasks) : null),
+    [activeTab, filteredTasks]
+  );
+  const conflicts = useMemo(
+    () => (activeTab === "schedule" ? getDependencyConflicts(filteredTasks) : []),
+    [activeTab, filteredTasks]
+  );
+  const relationship = useMemo(
+    () => (activeTab === "resources" ? getTaskRelationships(selectedRelationshipTaskId, filteredTasks) : null),
+    [activeTab, selectedRelationshipTaskId, filteredTasks]
+  );
+  const dependencyGraph = useMemo(
+    () =>
+      activeTab === "reports"
+        ? getDependencyGraphStarter(filteredTasks)
+        : { nodes: [], edges: [], starters: [], missingDependencies: [] },
+    [activeTab, filteredTasks]
   );
 
   function mergeBackIntoAllTasks(updatedFilteredTasks) {
     if (!selectedProjectId) {
-      bulkReplaceTasks(updatedFilteredTasks);
+      actions.bulkReplaceTasks(updatedFilteredTasks);
       return;
     }
-
-    const updatedMap = Object.fromEntries(
-      updatedFilteredTasks.map((task) => [task.id, task])
-    );
-
-    const merged = tasks.map((task) =>
-      updatedMap[task.id] ? updatedMap[task.id] : task
-    );
-
-    bulkReplaceTasks(merged);
+    const updatedMap = Object.fromEntries(updatedFilteredTasks.map((task) => [task.id, task]));
+    actions.bulkReplaceTasks(tasks.map((task) => updatedMap[task.id] || task));
   }
 
   function handleRecalculateSchedule() {
-    const recalculatedFiltered = recalculateMsProjectSchedule(
+    const recalculated = recalculateMsProjectSchedule(
       filteredTasks.map((task) => ({
         ...task,
-        isManualLocked:
-          schedulingMode === "manual" ? Boolean(task.isManualLocked) : false,
+        isManualLocked: schedulingMode === "manual" ? Boolean(task.isManualLocked) : false,
       }))
     );
-
-    mergeBackIntoAllTasks(recalculatedFiltered);
-    setStatusMessage("Schedule recalculated and saved automatically.");
-    setStatusError("");
+    mergeBackIntoAllTasks(recalculated);
+    notify.success("Dates recalculated from durations and dependencies.");
   }
 
-  function handleGridBulkUpdate(updatedFilteredTasks) {
-    mergeBackIntoAllTasks(updatedFilteredTasks);
-    setStatusMessage("Schedule changes saved automatically.");
-    setStatusError("");
-  }
+  const currentTab = PLANNER_TABS.find((tab) => tab.key === activeTab);
 
-  function handleChangeMode(mode) {
-    setSchedulingMode(mode);
-    setStatusMessage("Scheduling mode updated and saved automatically.");
-    setStatusError("");
-  }
-
-  function handleSelectConflictTask(taskId) {
-    setActiveTab("schedule");
-    setFocusedTaskId(taskId);
-  }
-
-  async function handleProjectDetailsSave() {
-    if (!selectedProject) {
-      setStatusError("Please select a project before editing project details.");
-      return;
-    }
-
-    if (!projectEditForm.name.trim()) {
-      setStatusError("Project name cannot be empty.");
-      return;
-    }
-
-    try {
-      setProjectEditSaving(true);
-      setStatusMessage("");
-      setStatusError("");
-
-      const updatedProject = {
-        ...selectedProject,
-        name: projectEditForm.name.trim(),
-        owner: projectEditForm.owner.trim(),
-        status: projectEditForm.status || "Active",
-        startDate: projectEditForm.startDate || "",
-        targetEndDate: projectEditForm.targetEndDate || "",
-        description: projectEditForm.description.trim(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      updateProject(selectedProject.id, updatedProject);
-
-      setLastUpdatedAt(getFormattedNow());
-      setIsProjectEditOpen(false);
-      setStatusMessage("Project details updated and saved automatically.");
-    } catch (error) {
-      setStatusError(error.message || "Failed to update project details.");
-    } finally {
-      setProjectEditSaving(false);
-    }
+  if (projects.length === 0) {
+    return (
+      <EmptyState
+        icon={FolderKanban}
+        title="No projects yet"
+        description="The planner shows the tasks of your projects. Create one, or import an existing plan."
+      >
+        <Button variant="primary" onClick={openNewProject}>Create a project</Button>
+        <Link to="/data" className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          Import a file
+        </Link>
+      </EmptyState>
+    );
   }
 
   return (
-    <div className="space-y-3">
-      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+    <div className="space-y-5">
+      <div className="-mx-4 -mt-6 border-b border-slate-200 bg-white px-4 pt-5 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                <FolderKanban className="h-4 w-4" />
-              </div>
-
-              <div className="min-w-0">
-                <h2 className="truncate text-lg font-semibold tracking-tight text-slate-900">
-                  {selectedProject ? selectedProject.name : "Project Planner"}
-                </h2>
-
-                <div className="mt-0.5 text-xs text-slate-500">
-                  {filteredTasks.length} tasks • {filteredSprints.length}{" "}
-                  sprints • {schedulingMode} mode
-                </div>
-              </div>
+            <div className="text-xs font-medium text-slate-500">Planner</div>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <label htmlFor="planner-project" className="sr-only">
+                Project
+              </label>
+              <select
+                id="planner-project"
+                value={selectedProjectId}
+                onChange={(event) => updateParams({ projectId: event.target.value, taskId: "" })}
+                className="-ml-1 max-w-full cursor-pointer truncate rounded-lg border border-transparent bg-transparent py-0.5 pl-1 pr-8 text-xl font-semibold tracking-tight text-slate-900 hover:border-slate-200 hover:bg-slate-50 focus:border-indigo-300"
+              >
+                <option value="">All projects</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              {metrics ? <Badge tone={HEALTH_TONE[metrics.health.level]}>{metrics.health.label}</Badge> : null}
             </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {selectedProject
+                ? [
+                    selectedProject.owner,
+                    selectedProject.targetEndDate ? `Target ${formatDate(selectedProject.targetEndDate)}` : "",
+                    `${filteredTasks.length} tasks`,
+                    "Changes save automatically",
+                  ]
+                    .filter(Boolean)
+                    .join("  ·  ")
+                : `${projects.length} projects · ${tasks.length} tasks · Changes save automatically`}
+            </p>
           </div>
-
-          <SaveStatusCard lastUpdatedAt={lastUpdatedAt} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to="/data" className={buttonClass("secondary")}>
+              <ArrowRightLeft className="h-4 w-4" /> Import / Export
+            </Link>
+            <Link
+              to={`/assistant${selectedProjectId ? `?projectId=${encodeURIComponent(selectedProjectId)}` : ""}`}
+              className={buttonClass("secondary")}
+            >
+              <Sparkles className="h-4 w-4 text-violet-600" /> Ask Claude
+            </Link>
+            <Button variant="primary" icon={ListPlus} onClick={() => openQuickTask(selectedProjectId)} data-testid="add-task">
+              Add task
+            </Button>
+          </div>
         </div>
 
-        {statusMessage ? (
-          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
-            {statusMessage}
-          </div>
-        ) : null}
-
-        {statusError ? (
-          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-            {statusError}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="grid gap-3 xl:grid-cols-[1fr_1.2fr]">
-        <PlannerProjectFilter
-          projects={projects}
-          selectedProjectId={selectedProjectId}
-          onChange={setSelectedProjectId}
+        <Tabs
+          className="mt-4 border-b-0"
+          label="Planner views"
+          items={PLANNER_TABS}
+          value={activeTab}
+          onChange={(key) => updateParams({ tab: key, taskId: "", view: "" })}
         />
+      </div>
 
-        <PlannerUnifiedDataTools
-          exportData={exportData}
-          onImportData={importPlannerData}
-        />
-      </section>
+      <p className="-mt-1 text-xs text-slate-500" data-testid="tab-hint">
+        {currentTab?.hint}
+        {!selectedProjectId && ["schedule", "board", "timeline", "resources"].includes(activeTab)
+          ? " Showing all projects; pick one at the top to focus."
+          : ""}
+      </p>
 
-      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <MetricCard label="Planned" value={`${summary.plannedAvg}%`} />
-        <MetricCard label="Actual" value={`${summary.actualAvg}%`} />
-        <MetricCard label="Variance" value={`${summary.variance}%`} />
-        <MetricCard label="In Progress" value={counts.inProgress} />
-        <MetricCard
-          label="Completed"
-          value={counts.done}
-          subtitle={`Blocked: ${counts.blocked}`}
-        />
-        <MetricCard label="Not Started" value={counts.notStarted} />
-      </section>
+      {activeTab === "overview" ? (
+        selectedProject ? (
+          <OverviewTab
+            project={selectedProject}
+            metrics={metrics}
+            tasks={filteredTasks}
+            onEdit={() => setEditingProject(true)}
+            sprintCount={filteredSprints.length}
+          />
+        ) : (
+          <SelectProjectNotice what="Project overviews" />
+        )
+      ) : null}
 
-      {(activeTab === "overview" || activeTab === "schedule") && (
-        <PlannerRiskSummary summary={riskSummary} />
-      )}
-
-      <PlannerTabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
-
-      {activeTab === "overview" && (
-        <div className="space-y-3">
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            {selectedProject ? (
-              <div className="space-y-4">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-                        <FolderKanban className="h-5 w-5" />
-                      </div>
-
-                      <div>
-                        <h3 className="text-lg font-semibold tracking-tight text-slate-900">
-                          {selectedProject.name}
-                        </h3>
-
-                        <div className="mt-1 text-xs text-slate-500">
-                          Project workspace overview
-                        </div>
-                      </div>
-                    </div>
-
-                    <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-                      {selectedProject.description || "No description added."}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsProjectEditOpen((prev) => !prev)}
-                    className="rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-                  >
-                    {isProjectEditOpen
-                      ? "Close Edit"
-                      : "Edit Project Details"}
-                  </button>
-                </div>
-
-                {isProjectEditOpen ? (
-                  <ProjectEditForm
-                    form={projectEditForm}
-                    onChange={setProjectEditForm}
-                    onSubmit={handleProjectDetailsSave}
-                    onCancel={() => {
-                      setProjectEditForm({
-                        name: selectedProject.name || "",
-                        owner: selectedProject.owner || "",
-                        status: selectedProject.status || "Active",
-                        startDate: selectedProject.startDate || "",
-                        targetEndDate: selectedProject.targetEndDate || "",
-                        description: selectedProject.description || "",
-                      });
-                      setIsProjectEditOpen(false);
-                    }}
-                    isSaving={projectEditSaving}
-                  />
-                ) : null}
-
-                <div className="grid gap-2 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="inline-flex items-center gap-2">
-                    <CircleUserRound className="h-4 w-4" />
-                    <span className="font-medium text-slate-800">Owner:</span>
-                    {selectedProject.owner || "Not assigned"}
-                  </div>
-
-                  <div className="inline-flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4" />
-                    <span className="font-medium text-slate-800">Start:</span>
-                    {selectedProject.startDate || "-"}
-                  </div>
-
-                  <div className="inline-flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4" />
-                    <span className="font-medium text-slate-800">
-                      Target End:
-                    </span>
-                    {selectedProject.targetEndDate || "-"}
-                  </div>
-
-                  <div className="inline-flex items-center gap-2">
-                    <KanbanSquare className="h-4 w-4" />
-                    <span className="font-medium text-slate-800">Status:</span>
-                    {selectedProject.status || "Active"}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-sm text-slate-600">
-                Select a project to see and edit its project-level overview
-                here.
-              </div>
-            )}
-          </section>
-
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <CompactStat
-              label="Sprints"
-              value={filteredSprints.length}
-              icon={ListTodo}
-            />
-            <CompactStat label="Not Started" value={counts.notStarted} />
-            <CompactStat label="In Progress" value={counts.inProgress} />
-            <CompactStat
-              label="Done / Blocked"
-              value={`${counts.done} / ${counts.blocked}`}
-            />
-            <CompactStat
-              label="Milestones"
-              value={counts.milestoneCount}
-              icon={Milestone}
-            />
-          </section>
-
-          <section className="grid gap-3 md:grid-cols-2">
-            <CompactStat
-              label="Project Documents"
-              value={filteredProjectDocuments.length}
-              icon={FileText}
-            />
-            <CompactStat
-              label="Weekly Manager Reports"
-              value={filteredWeeklyReports.length}
-              icon={FileText}
-            />
-          </section>
-        </div>
-      )}
-
-      {activeTab === "schedule" && (
-        <Suspense fallback={<TabLoadingBox label="Loading schedule..." />}>
+      <Suspense fallback={<TabLoading />}>
+        {activeTab === "schedule" ? (
           <div className="space-y-3">
             <PlannerScheduleAssistPanel
               tasks={filteredTasks}
               conflicts={conflicts}
+              riskSummary={riskSummary}
               schedulingMode={schedulingMode}
-              onChangeMode={handleChangeMode}
+              onChangeMode={(mode) => {
+                actions.setSchedulingMode(mode);
+                notify.info(`Scheduling mode: ${mode}.`);
+              }}
               onRecalculate={handleRecalculateSchedule}
-              onSelectConflictTask={handleSelectConflictTask}
+              onSelectConflictTask={(taskId) => updateParams({ taskId })}
             />
-
             <PlannerScheduleTable
-                tasks={filteredTasks}
-                sprints={filteredSprints}
-                onAddTask={addTask}
-                onUpdateTask={updateTask}
-                onDeleteTask={deleteTask}
-                onBulkUpdate={handleGridBulkUpdate}
-                selectedProjectId={selectedProjectId}
-                focusedTaskId={focusedTaskId}
-                onRecalculate={handleRecalculateSchedule}
+              tasks={filteredTasks}
+              sprints={filteredSprints}
+              onAddTask={actions.addTask}
+              onUpdateTask={actions.updateTask}
+              onDeleteTask={actions.deleteTask}
+              onBulkUpdate={mergeBackIntoAllTasks}
+              selectedProjectId={selectedProjectId}
+              focusedTaskId={focusedTaskId}
             />
           </div>
-        </Suspense>
-      )}
+        ) : null}
 
-      {activeTab === "board" && (
-        <Suspense fallback={<TabLoadingBox label="Loading board..." />}>
-          <PlannerBoardView tasks={filteredTasks} onUpdateTask={updateTask} />
-        </Suspense>
-      )}
+        {activeTab === "board" ? <PlannerBoardView tasks={filteredTasks} onUpdateTask={actions.updateTask} /> : null}
 
-      {activeTab === "timeline" && (
-        <Suspense fallback={<TabLoadingBox label="Loading timeline..." />}>
-          <PlannerTimelineView tasks={filteredTasks} onUpdateTask={updateTask} />
-        </Suspense>
-      )}
+        {activeTab === "timeline" ? <PlannerTimelineView tasks={filteredTasks} onUpdateTask={actions.updateTask} /> : null}
 
-      {activeTab === "sprints" && (
-        <div className="space-y-3">
-          {!selectedProjectId ? (
-            <EmptyProjectNotice />
+        {activeTab === "sprints" ? (
+          selectedProjectId ? (
+            <SprintList
+              projectId={selectedProjectId}
+              sprints={filteredSprints}
+              onAdd={actions.addSprint}
+              onDelete={actions.deleteSprint}
+              onUpdate={actions.updateSprint}
+            />
           ) : (
-            <>
-              <CollapsibleCard
-                title="Create Sprint"
-                subtitle="Open only when you want to add a new sprint."
-                defaultOpen={false}
-              >
-                <SprintForm projectId={selectedProjectId} onSubmit={addSprint} />
-              </CollapsibleCard>
+            <SelectProjectNotice what="Sprints" />
+          )
+        ) : null}
 
-              <SprintList
-                sprints={filteredSprints}
-                onDelete={deleteSprint}
-                onUpdate={updateSprint}
-              />
-            </>
-          )}
-        </div>
-      )}
-
-      {activeTab === "resources" && (
-        <Suspense fallback={<TabLoadingBox label="Loading resources..." />}>
-          <div className="grid gap-3 xl:grid-cols-2">
+        {activeTab === "resources" ? (
+          <div className="space-y-4">
             <PlannerResourcesView tasks={filteredTasks} />
-
             <PlannerRelationshipPanel
               tasks={filteredTasks}
               selectedTaskId={selectedRelationshipTaskId}
@@ -951,55 +503,73 @@ export default function PlannerPage() {
               relationship={relationship}
             />
           </div>
-        </Suspense>
-      )}
+        ) : null}
 
-      {activeTab === "documents" && (
-        <Suspense fallback={<TabLoadingBox label="Loading documents..." />}>
+        {activeTab === "documents" ? (
           <ProjectDocumentsView
             selectedProject={selectedProject}
             projectDocuments={filteredProjectDocuments}
-            onAddDocument={addProjectDocument}
-            onUpdateDocument={updateProjectDocument}
-            onDeleteDocument={deleteProjectDocument}
+            onAddDocument={actions.addProjectDocument}
+            onUpdateDocument={actions.updateProjectDocument}
+            onDeleteDocument={actions.deleteProjectDocument}
           />
-        </Suspense>
-      )}
+        ) : null}
 
-      {activeTab === "reports" && (
-        <Suspense fallback={<TabLoadingBox label="Loading reports..." />}>
-          <div className="space-y-3">
-            <WeeklyCeoReportView
-              selectedProject={selectedProject}
-              tasks={filteredTasks}
-              weeklyReports={filteredWeeklyReports}
-              onAddReport={addWeeklyReport}
-              onUpdateReport={updateWeeklyReport}
-              onDeleteReport={deleteWeeklyReport}
+        {activeTab === "reports" ? (
+          <div className="space-y-4">
+            <Segmented
+              label="Report type"
+              value={reportView}
+              onChange={(value) => updateParams({ view: value === "status" ? "" : value })}
+              options={[
+                { value: "status", label: "Status reports" },
+                { value: "analysis", label: "Analysis" },
+                { value: "baselines", label: "Baselines" },
+                { value: "dependencies", label: "Dependencies" },
+              ]}
             />
-
-            <CollapsibleCard
-              title="Baseline Snapshots"
-              subtitle="Open to create or compare baselines."
-              defaultOpen={false}
-            >
-              <PlannerBaselinePanel
-                selectedProjectId={selectedProjectId}
+            {reportView === "status" ? (
+              <WeeklyCeoReportView
+                selectedProject={selectedProject}
                 tasks={filteredTasks}
-                snapshots={baselineSnapshots}
-                onCreateSnapshot={createBaselineSnapshot}
+                weeklyReports={filteredWeeklyReports}
+                onAddReport={actions.addWeeklyReport}
+                onUpdateReport={actions.updateWeeklyReport}
+                onDeleteReport={actions.deleteWeeklyReport}
               />
-            </CollapsibleCard>
-
-            <PlannerReportsView tasks={filteredTasks} />
-
-            <div className="grid gap-3 xl:grid-cols-2">
-              <PlannerDependencyGraphStarter graph={dependencyGraph} />
-              <PlannerDependencyGraphVisual graph={dependencyGraph} />
-            </div>
+            ) : null}
+            {reportView === "analysis" ? <PlannerReportsView tasks={filteredTasks} /> : null}
+            {reportView === "baselines" ? (
+              <Panel title="Baselines" subtitle="Save a snapshot of the plan, then see how dates moved since.">
+                <div className="p-5">
+                  <PlannerBaselinePanel
+                    selectedProjectId={selectedProjectId}
+                    tasks={filteredTasks}
+                    snapshots={baselineSnapshots}
+                    onCreateSnapshot={actions.createBaselineSnapshot}
+                  />
+                </div>
+              </Panel>
+            ) : null}
+            {reportView === "dependencies" ? <PlannerDependencyGraphStarter graph={dependencyGraph} /> : null}
           </div>
-        </Suspense>
-      )}
+        ) : null}
+      </Suspense>
+
+      <Modal open={editingProject && Boolean(selectedProject)} onClose={() => setEditingProject(false)} title="Edit project">
+        {selectedProject ? (
+          <ProjectForm
+            initialValue={selectedProject}
+            submitLabel="Save changes"
+            onCancel={() => setEditingProject(false)}
+            onSubmit={(values) => {
+              actions.updateProject(selectedProject.id, values);
+              setEditingProject(false);
+              notify.success("Project updated.");
+            }}
+          />
+        ) : null}
+      </Modal>
     </div>
   );
 }
