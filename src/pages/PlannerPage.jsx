@@ -101,7 +101,7 @@ function SelectProjectNotice({ what }) {
   );
 }
 
-function OverviewTab({ project, metrics, tasks, onEdit, sprintCount, docCount, reportCount }) {
+function OverviewTab({ project, metrics, tasks, onEdit, sprintCount }) {
   const milestones = tasks
     .filter((task) => task.isMilestone)
     .sort((a, b) => String(a.plannedStart || a.plannedEnd).localeCompare(String(b.plannedStart || b.plannedEnd)));
@@ -424,8 +424,6 @@ export default function PlannerPage() {
             tasks={filteredTasks}
             onEdit={() => setEditingProject(true)}
             sprintCount={filteredSprints.length}
-            docCount={filteredProjectDocuments.length}
-            reportCount={filteredWeeklyReports.length}
           />
         ) : (
           <SelectProjectNotice what="Project overviews" />
