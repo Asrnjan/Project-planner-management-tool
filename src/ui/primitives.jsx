@@ -15,14 +15,23 @@ const BUTTON_VARIANTS = {
   ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-slate-400",
   danger:
     "border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 focus-visible:outline-red-500",
-  ai: "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-sm hover:from-violet-700 hover:to-indigo-700 focus-visible:outline-violet-600",
+  ai: "bg-violet-600 text-white shadow-sm hover:bg-violet-700 focus-visible:outline-violet-600",
 };
 
 const BUTTON_SIZES = {
   sm: "h-8 gap-1.5 rounded-lg px-2.5 text-xs",
-  md: "h-9 gap-2 rounded-xl px-3.5 text-sm",
-  lg: "h-11 gap-2 rounded-xl px-5 text-sm",
+  md: "h-9 gap-2 rounded-lg px-3.5 text-sm",
+  lg: "h-11 gap-2 rounded-lg px-5 text-sm",
 };
+
+/** Class names for links that should look like buttons. */
+export function buttonClass(variant = "secondary", size = "md") {
+  return cx(
+    "inline-flex shrink-0 items-center justify-center font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2",
+    BUTTON_VARIANTS[variant],
+    BUTTON_SIZES[size]
+  );
+}
 
 export function Button({
   variant = "secondary",
@@ -54,7 +63,7 @@ export function Card({ className = "", children, ...props }) {
   return (
     <section
       {...props}
-      className={cx("rounded-2xl border border-slate-200 bg-white shadow-sm", className)}
+      className={cx("rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]", className)}
     >
       {children}
     </section>
@@ -173,7 +182,7 @@ export function Field({ label, hint, required, children, htmlFor }) {
 }
 
 export const inputClass =
-  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
+  "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100";
 
 /** Accessible modal dialog: focus moves in, Escape closes, focus returns. */
 export function Modal({ open, onClose, title, description, children, footer, size = "md" }) {
@@ -320,4 +329,191 @@ export function FeedbackHost() {
       </Modal>
     </>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Layout helpers shared by every screen, so they all look the same.  */
+/* ------------------------------------------------------------------ */
+
+/** Card with a header bar (title, optional subtitle and actions) and a body. */
+export function Panel({ title, subtitle, icon: Icon, actions, children, className = "", bodyClassName = "", ...props }) {
+  return (
+    <section
+      {...props}
+      className={cx("overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]", className)}
+    >
+      {title ? (
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {Icon ? <Icon className="h-4 w-4 shrink-0 text-slate-400" aria-hidden /> : null}
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-semibold text-slate-900">{title}</h2>
+              {subtitle ? <p className="truncate text-xs text-slate-500">{subtitle}</p> : null}
+            </div>
+          </div>
+          {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+        </header>
+      ) : null}
+      <div className={bodyClassName}>{children}</div>
+    </section>
+  );
+}
+
+/** A row of numbers inside one card, separated by dividers. */
+export function StatStrip({ items, className = "" }) {
+  return (
+    <dl
+      className={cx(
+        "grid divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:divide-x sm:divide-y-0",
+        className
+      )}
+      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+    >
+      {items.map((item) => (
+        <div key={item.label} className="min-w-0 px-4 py-3">
+          <dt className="truncate text-xs font-medium text-slate-500">{item.label}</dt>
+          <dd className={cx("mt-1 truncate text-xl font-semibold tracking-tight", item.tone || "text-slate-900")}>
+            {item.value}
+          </dd>
+          {item.hint ? <p className="mt-0.5 truncate text-[11px] text-slate-400">{item.hint}</p> : null}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Underline tabs. items: [{ key, label, icon?, count? }] */
+export function Tabs({ items, value, onChange, label, className = "" }) {
+  return (
+    <div className={cx("overflow-x-auto border-b border-slate-200", className)}>
+      <div role="tablist" aria-label={label} className="flex min-w-max gap-1">
+        {items.map((item) => {
+          const active = item.key === value;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange(item.key)}
+              className={cx(
+                "-mb-px inline-flex items-center gap-2 border-b-2 px-3 pb-2.5 pt-2 text-sm font-medium transition",
+                active
+                  ? "border-indigo-600 text-indigo-700"
+                  : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800"
+              )}
+            >
+              {item.icon ? <item.icon className="h-4 w-4" aria-hidden /> : null}
+              {item.label}
+              {item.count !== undefined ? (
+                <span className={cx("rounded-full px-1.5 text-[11px]", active ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500")}>
+                  {item.count}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Small segmented switch, e.g. Manual / Auto. */
+export function Segmented({ options, value, onChange, label }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg bg-slate-100 p-0.5">
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            title={option.title}
+            onClick={() => onChange(option.value)}
+            className={cx(
+              "rounded-md px-2.5 py-1 text-xs font-medium transition",
+              active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Consistent table styling. columns: [{ key, label, className, render }] */
+export function DataTable({ columns, rows, rowKey = "id", empty = "Nothing here yet.", onRowClick }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50/70 text-left">
+            {columns.map((column) => (
+              <th key={column.key} scope="col" className={cx("whitespace-nowrap px-4 py-2.5 text-xs font-medium text-slate-500", column.className)}>
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={columns.length} className="px-4 py-8 text-center text-sm text-slate-500">
+                {empty}
+              </td>
+            </tr>
+          ) : (
+            rows.map((row) => (
+              <tr
+                key={row[rowKey]}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={cx("bg-white", onRowClick ? "cursor-pointer hover:bg-slate-50" : "")}
+              >
+                {columns.map((column) => (
+                  <td key={column.key} className={cx("px-4 py-2.5 align-middle text-slate-700", column.className)}>
+                    {column.render ? column.render(row) : row[column.key]}
+                  </td>
+                ))}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function Avatar({ name, size = "md" }) {
+  const label = String(name || "?").trim();
+  const initials = label === "Unassigned" ? "–" : label.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  const palette = ["bg-indigo-100 text-indigo-700", "bg-emerald-100 text-emerald-700", "bg-amber-100 text-amber-800", "bg-sky-100 text-sky-700", "bg-rose-100 text-rose-700", "bg-violet-100 text-violet-700"];
+  const color = label === "Unassigned" ? "bg-slate-100 text-slate-400" : palette[[...label].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % palette.length];
+  return (
+    <span
+      className={cx(
+        "inline-flex shrink-0 items-center justify-center rounded-full font-semibold",
+        size === "sm" ? "h-6 w-6 text-[10px]" : "h-8 w-8 text-xs",
+        color
+      )}
+      title={label}
+      aria-hidden
+    >
+      {initials || "?"}
+    </span>
+  );
+}
+
+const STATUS_TONES = {
+  "Not Started": "slate",
+  "In Progress": "blue",
+  Done: "green",
+  Blocked: "red",
+};
+
+export function StatusBadge({ status }) {
+  return <Badge tone={STATUS_TONES[status] || "slate"}>{status || "Not Started"}</Badge>;
 }

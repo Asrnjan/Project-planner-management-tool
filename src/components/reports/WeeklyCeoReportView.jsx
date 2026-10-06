@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AiDraftReportButton from "../ai/AiDraftReportButton";
+import { StatStrip } from "../../ui/primitives";
 import { confirmAction } from "../../ui/feedback";
 import {
   AlertTriangle,
@@ -222,34 +223,6 @@ function TextArea(props) {
       rows={props.rows || 3}
       className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-5 text-slate-800 outline-none focus:border-slate-400 focus:bg-white"
     />
-  );
-}
-
-function CompactMetric({ label, value, icon: Icon, tone = "slate" }) {
-  const toneClass =
-    tone === "green"
-      ? "bg-emerald-50 text-emerald-700"
-      : tone === "red"
-      ? "bg-red-50 text-red-700"
-      : "bg-slate-50 text-slate-700";
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            {label}
-          </div>
-          <div className="text-base font-semibold text-slate-900">{value}</div>
-        </div>
-
-        <div
-          className={`flex h-8 w-8 items-center justify-center rounded-xl ${toneClass}`}
-        >
-          <Icon className="h-4 w-4" />
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1382,8 +1355,8 @@ export default function WeeklyCeoReportView({
 
   if (!selectedProject) {
     return (
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
           <FileText className="h-4 w-4" />
           Weekly Manager Report
         </div>
@@ -1402,72 +1375,27 @@ export default function WeeklyCeoReportView({
 
   return (
     <div className="space-y-3">
-      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-              <FileText className="h-3.5 w-3.5" />
-              Weekly Manager Report
-            </div>
-
-            <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-900">
-              {selectedProject.name}
-            </h3>
-
-            <p className="mt-1 text-sm text-slate-500">
-              One compact weekly form for manager-level status reporting,
-              centralized PPT reporting, POC tracking, proposals, and
-              documentation updates.
-            </p>
-          </div>
-
-          <div
-            className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${getStatusClass(
-              form.overallStatus
-            )}`}
-          >
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${getStatusDotClass(
-                form.overallStatus
-              )}`}
-            />
-            {form.overallStatus}
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-        <CompactMetric
-          label="Planned"
-          value={`${calculated.plannedAvg}%`}
-          icon={BarChart3}
-        />
-
-        <CompactMetric
-          label="Actual"
-          value={`${calculated.actualAvg}%`}
-          icon={Gauge}
-          tone="green"
-        />
-
-        <CompactMetric
-          label="Completed"
-          value={calculated.completed}
-          icon={CheckCircle2}
-          tone="green"
-        />
-
-        <CompactMetric
-          label="Blocked"
-          value={calculated.blocked}
-          icon={AlertTriangle}
-          tone={calculated.blocked > 0 ? "red" : "slate"}
-        />
-      </section>
+      <StatStrip
+        items={[
+          {
+            label: "Overall status",
+            value: (
+              <span className="inline-flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${getStatusDotClass(form.overallStatus)}`} />
+                {form.overallStatus}
+              </span>
+            ),
+          },
+          { label: "Planned progress", value: `${calculated.plannedAvg}%` },
+          { label: "Actual progress", value: `${calculated.actualAvg}%` },
+          { label: "Completed tasks", value: calculated.completed, tone: "text-emerald-700" },
+          { label: "Blocked tasks", value: calculated.blocked, tone: calculated.blocked ? "text-red-600" : undefined },
+        ]}
+      />
 
       <form
         onSubmit={handleSubmit}
-        className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+        className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
       >
         <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
           <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
@@ -2155,7 +2083,7 @@ export default function WeeklyCeoReportView({
 
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
               >
                 <Save className="h-4 w-4" />
                 {editingReportId
@@ -2167,7 +2095,7 @@ export default function WeeklyCeoReportView({
         </div>
       </form>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-col gap-2 border-b border-slate-100 pb-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h4 className="text-sm font-semibold text-slate-900">
@@ -2186,20 +2114,20 @@ export default function WeeklyCeoReportView({
 
         <div className="mt-3 grid gap-2">
           {projectReports.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
               No weekly reports submitted yet.
             </div>
           ) : (
             projectReports.map((report) => (
               <div
                 key={report.id}
-                className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
               >
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span
-                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-wide ${getStatusClass(
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${getStatusClass(
                           report.overallStatus
                         )}`}
                       >
@@ -2256,7 +2184,7 @@ export default function WeeklyCeoReportView({
                       onClick={() =>
                         generateManagerPpt({ report, project: selectedProject })
                       }
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800"
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
                     >
                       <Download className="h-3.5 w-3.5" />
                       PPT

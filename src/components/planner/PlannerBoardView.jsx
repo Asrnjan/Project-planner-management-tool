@@ -1,29 +1,8 @@
 import { useRef, useState } from "react";
-import {
-  CheckCircle2,
-  CircleDashed,
-  PauseCircle,
-  PlayCircle,
-  CircleUserRound,
-  Milestone,
-} from "lucide-react";
+import { CalendarDays, Milestone } from "lucide-react";
+import { Avatar } from "../../ui/primitives";
 
 const columns = ["Not Started", "In Progress", "Done", "Blocked"];
-
-function getColumnIcon(status) {
-  switch (status) {
-    case "Not Started":
-      return CircleDashed;
-    case "In Progress":
-      return PlayCircle;
-    case "Done":
-      return CheckCircle2;
-    case "Blocked":
-      return PauseCircle;
-    default:
-      return CircleDashed;
-  }
-}
 
 function getSuggestedUpdates(status, task) {
   if (status === "Done") {
@@ -58,90 +37,89 @@ function getSuggestedUpdates(status, task) {
   return { status };
 }
 
-function PriorityBadge({ priority }) {
-  const cls =
-    priority === "High"
-      ? "bg-red-100 text-red-700"
-      : priority === "Low"
-      ? "bg-emerald-100 text-emerald-700"
-      : "bg-amber-100 text-amber-700";
+const PRIORITY_DOT = {
+  Critical: "bg-red-600",
+  High: "bg-orange-500",
+  Medium: "bg-amber-400",
+  Low: "bg-slate-300",
+};
 
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}>
-      {priority || "Medium"}
-    </span>
-  );
-}
+const COLUMN_DOT = {
+  "Not Started": "bg-slate-400",
+  "In Progress": "bg-blue-500",
+  Done: "bg-emerald-500",
+  Blocked: "bg-red-500",
+};
 
-function QuickActionButton({ onClick, children }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-xl bg-slate-100 px-2.5 py-1.5 text-[10px] font-medium text-slate-700 transition hover:bg-slate-200"
-    >
-      {children}
-    </button>
-  );
+const MOVE_LABELS = {
+  "Not Started": "To Do",
+  "In Progress": "Start",
+  Done: "Done",
+  Blocked: "Block",
+};
+
+function formatDue(iso) {
+  if (!iso) return "";
+  const date = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
 function TaskCard({ task, onDragStart, onQuickMove }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const due = task.plannedEnd || task.plannedStart;
+  const late = due && due < today && task.status !== "Done";
+  const progress = Math.max(0, Math.min(100, Number(task.actualProgress || 0)));
+
   return (
     <div
       draggable
       onDragStart={() => onDragStart(task)}
-      className="cursor-grab rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing"
+      className="group cursor-grab rounded-lg border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-slate-300 hover:shadow-md active:cursor-grabbing"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-slate-900">
-            {task.title}
-          </div>
-
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            <div className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-              <CircleUserRound className="h-3.5 w-3.5" />
-              {task.owner || "Unassigned"}
-            </div>
-
-            {task.isMilestone ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">
-                <Milestone className="h-3 w-3" />
-                Milestone
-              </span>
-            ) : null}
-          </div>
+      <div className="flex items-start gap-2">
+        <span
+          className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${PRIORITY_DOT[task.priority] || PRIORITY_DOT.Medium}`}
+          title={`${task.priority || "Medium"} priority`}
+          aria-label={`${task.priority || "Medium"} priority`}
+        />
+        <div className="line-clamp-2 min-w-0 flex-1 text-sm font-medium leading-5 text-slate-900">
+          {task.isMilestone ? <Milestone className="mr-1 inline h-3.5 w-3.5 text-violet-600" aria-label="Milestone" /> : null}
+          {task.title}
         </div>
-
-        <PriorityBadge priority={task.priority} />
       </div>
 
-      <div className="mt-3 grid gap-1 text-[11px] text-slate-500">
-        <div>Plan: {task.plannedStart || "-"} to {task.plannedEnd || "-"}</div>
-        <div>Actual: {task.actualProgress || 0}%</div>
+      <div className="mt-2.5 flex items-center justify-between gap-2 text-xs text-slate-500">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <Avatar name={task.owner || "Unassigned"} size="sm" />
+          <span className="truncate">{task.owner || "Unassigned"}</span>
+        </span>
+        {due ? (
+          <span className={`inline-flex shrink-0 items-center gap-1 ${late ? "font-medium text-red-600" : ""}`}>
+            <CalendarDays className="h-3.5 w-3.5" aria-hidden />
+            {formatDue(due)}
+          </span>
+        ) : null}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {task.status !== "Not Started" && (
-          <QuickActionButton onClick={() => onQuickMove(task, "Not Started")}>
-            To Do
-          </QuickActionButton>
-        )}
-        {task.status !== "In Progress" && (
-          <QuickActionButton onClick={() => onQuickMove(task, "In Progress")}>
-            Start
-          </QuickActionButton>
-        )}
-        {task.status !== "Done" && (
-          <QuickActionButton onClick={() => onQuickMove(task, "Done")}>
-            Done
-          </QuickActionButton>
-        )}
-        {task.status !== "Blocked" && (
-          <QuickActionButton onClick={() => onQuickMove(task, "Blocked")}>
-            Block
-          </QuickActionButton>
-        )}
+      {progress > 0 && task.status !== "Done" ? (
+        <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-slate-100" aria-label={`${progress}% done`}>
+          <div className="h-full rounded-full bg-blue-500" style={{ width: `${progress}%` }} />
+        </div>
+      ) : null}
+
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-slate-100 pt-2">
+        {columns
+          .filter((status) => status !== task.status)
+          .map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => onQuickMove(task, status)}
+              className="text-xs font-medium text-slate-500 hover:text-indigo-700"
+            >
+              {MOVE_LABELS[status]}
+            </button>
+          ))}
       </div>
     </div>
   );
@@ -189,7 +167,6 @@ export default function PlannerBoardView({ tasks, onUpdateTask }) {
             ? task.status === status
             : status === "Not Started"
         );
-        const Icon = getColumnIcon(status);
         const isHovering = hoverColumn === status;
 
         return (
@@ -203,28 +180,21 @@ export default function PlannerBoardView({ tasks, onUpdateTask }) {
               if (hoverColumn === status) setHoverColumn("");
             }}
             onDrop={() => handleDrop(status)}
-            className={`rounded-3xl border p-3 transition ${
-              isHovering
-                ? "border-slate-400 bg-slate-100"
-                : "border-slate-200 bg-slate-50"
+            className={`rounded-xl border p-2.5 transition ${
+              isHovering ? "border-indigo-300 bg-indigo-50/60" : "border-slate-200 bg-slate-100/60"
             }`}
           >
-            <div className="mb-3 flex items-center justify-between px-1">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm">
-                  <Icon className="h-4 w-4" />
-                </div>
-                <h3 className="text-sm font-semibold text-slate-900">{status}</h3>
-              </div>
-
-              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-slate-600 shadow-sm">
-                {statusTasks.length}
-              </span>
+            <div className="mb-2.5 flex items-center justify-between px-1.5 pt-1">
+              <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <span className={`h-2 w-2 rounded-full ${COLUMN_DOT[status]}`} aria-hidden />
+                {status}
+              </h3>
+              <span className="text-xs font-medium text-slate-500">{statusTasks.length}</span>
             </div>
 
             <div className="min-h-[180px] space-y-2">
               {statusTasks.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-center text-xs text-slate-400">
+                <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-slate-400">
                   {isHovering ? "Release to move task here" : "Drop task here"}
                 </div>
               ) : (

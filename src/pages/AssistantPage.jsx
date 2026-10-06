@@ -126,7 +126,7 @@ function AskClaude({ projectId, disabled }) {
               ) : null}
               <div
                 className={cx(
-                  "max-w-[85%] rounded-2xl px-4 py-2.5",
+                  "max-w-[85%] rounded-xl px-4 py-2.5",
                   message.role === "user"
                     ? "bg-slate-900 text-sm text-white"
                     : message.role === "error"
@@ -291,7 +291,7 @@ function PlanGenerator({ disabled, defaultProjectId }) {
         </div>
 
         {preview ? (
-          <div className="space-y-3 rounded-2xl border border-violet-200 bg-violet-50/40 p-4" data-testid="plan-preview">
+          <div className="space-y-3 rounded-xl border border-violet-200 bg-violet-50/40 p-4" data-testid="plan-preview">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-sm font-semibold text-slate-900">
                 Proposed plan: {preview.tasks.length} tasks in {Object.keys(phases).length} phases
@@ -301,7 +301,7 @@ function PlanGenerator({ disabled, defaultProjectId }) {
             <div className="max-h-80 space-y-3 overflow-y-auto">
               {Object.entries(phases).map(([phase, items]) => (
                 <div key={phase}>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{phase}</div>
+                  <div className="text-xs font-semibold text-slate-500">{phase}</div>
                   <ul className="mt-1 space-y-1">
                     {items.map((task) => (
                       <li key={task.key} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-1.5 text-sm">

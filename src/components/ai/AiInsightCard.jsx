@@ -80,7 +80,7 @@ export function AiInsightsView({ result }) {
 
       {result.risks?.length ? (
         <div>
-          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
             <AlertTriangle className="h-3.5 w-3.5" aria-hidden /> Risks
           </h4>
           <ul className="space-y-2">
@@ -102,7 +102,7 @@ export function AiInsightsView({ result }) {
 
       {result.recommendations?.length ? (
         <div>
-          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
             <Lightbulb className="h-3.5 w-3.5" aria-hidden /> Recommended actions
           </h4>
           <ol className="space-y-2">
@@ -124,7 +124,7 @@ export function AiInsightsView({ result }) {
 
       {result.positives?.length ? (
         <div>
-          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
             <ThumbsUp className="h-3.5 w-3.5" aria-hidden /> Going well
           </h4>
           <ul className="space-y-1 text-sm text-slate-600">

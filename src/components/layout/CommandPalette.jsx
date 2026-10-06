@@ -112,7 +112,7 @@ function PaletteBody({ onClose }) {
         role="dialog"
         aria-modal="true"
         aria-label="Search and commands"
-        className="relative w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="relative w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl"
       >
         <div className="flex items-center gap-3 border-b border-slate-100 px-4">
           <Search className="h-4 w-4 text-slate-400" aria-hidden />
@@ -147,7 +147,7 @@ function PaletteBody({ onClose }) {
               return (
                 <li key={command.id} role="presentation">
                   {showGroup ? (
-                    <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    <div className="px-3 pb-1 pt-2 text-xs font-semibold text-slate-400">
                       {command.group}
                     </div>
                   ) : null}

@@ -26,8 +26,8 @@ function compareSnapshotWithCurrent(snapshot, tasks) {
 
 function Stat({ label, value }) {
   return (
-    <div className="rounded-2xl bg-slate-50 p-2.5">
-      <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+    <div className="rounded-xl bg-slate-50 p-2.5">
+      <div className="text-xs font-medium text-slate-500">
         {label}
       </div>
       <div className="mt-1 text-sm font-semibold tracking-tight text-slate-900">
@@ -62,10 +62,10 @@ export default function PlannerBaselinePanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            <div className="inline-flex items-center gap-2 text-xs font-medium text-slate-500">
               <GitBranchPlus className="h-3.5 w-3.5" />
               Baseline Snapshots
             </div>
@@ -82,11 +82,11 @@ export default function PlannerBaselinePanel({
               value={snapshotName}
               onChange={(e) => setSnapshotName(e.target.value)}
               placeholder="Snapshot name"
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm"
             />
             <button
               onClick={handleCreate}
-              className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-medium text-white"
+              className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white"
             >
               Create Snapshot
             </button>
@@ -95,7 +95,7 @@ export default function PlannerBaselinePanel({
       </div>
 
       {relevantSnapshots.length === 0 ? (
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
           No baseline snapshots found for this view.
         </div>
       ) : (
@@ -106,7 +106,7 @@ export default function PlannerBaselinePanel({
             return (
               <div
                 key={snapshot.id}
-                className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
+                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
               >
                 <div>
                   <h4 className="text-sm font-semibold text-slate-900">{snapshot.name}</h4>

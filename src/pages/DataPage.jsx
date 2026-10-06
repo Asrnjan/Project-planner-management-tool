@@ -77,11 +77,11 @@ function DropZone({ onFile, busy }) {
         if (file) onFile(file);
       }}
       className={cx(
-        "flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition",
+        "flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition",
         dragging ? "border-indigo-400 bg-indigo-50" : "border-slate-300 bg-slate-50/50"
       )}
     >
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-indigo-600 shadow-sm">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm">
         {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <FileUp className="h-6 w-6" />}
       </div>
       <p className="mt-3 text-sm font-semibold text-slate-900">

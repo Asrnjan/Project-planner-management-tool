@@ -28,14 +28,15 @@ import {
   CardHeader,
   EmptyState,
   Modal,
+  Panel,
   ProgressBar,
+  Segmented,
+  StatStrip,
+  Tabs,
+  buttonClass,
   cx,
-  inputClass,
 } from "../ui/primitives";
 
-import PlannerRiskSummary from "../components/planner/PlannerRiskSummary";
-import CollapsibleCard from "../components/common/AppCollapsibleCard";
-import SprintForm from "../components/sprints/SprintForm";
 import SprintList from "../components/sprints/SprintList";
 import ProjectForm from "../components/projects/ProjectForm";
 import AiInsightCard from "../components/ai/AiInsightCard";
@@ -61,7 +62,6 @@ const WeeklyCeoReportView = lazy(() => import("../components/reports/WeeklyCeoRe
 const PlannerReportsView = lazy(() => import("../components/planner/PlannerReportsView"));
 const PlannerBaselinePanel = lazy(() => import("../components/planner/PlannerBaselinePanel"));
 const PlannerDependencyGraphStarter = lazy(() => import("../components/planner/PlannerDependencyGraphStarter"));
-const PlannerDependencyGraphVisual = lazy(() => import("../components/planner/PlannerDependencyGraphVisual"));
 
 export const PLANNER_TABS = [
   { key: "overview", label: "Overview", icon: LayoutGrid, hint: "Project summary, health, milestones and Claude's briefing." },
@@ -76,7 +76,7 @@ export const PLANNER_TABS = [
 
 function TabLoading() {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600" />
       Loading...
     </div>
@@ -89,15 +89,6 @@ function formatDate(iso) {
   return Number.isNaN(date.getTime())
     ? iso
     : date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-}
-
-function Stat({ label, value, tone }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-      <div className="text-[11px] font-medium text-slate-500">{label}</div>
-      <div className={cx("text-lg font-semibold tracking-tight", tone || "text-slate-900")}>{value}</div>
-    </div>
-  );
 }
 
 function SelectProjectNotice({ what }) {
@@ -157,16 +148,24 @@ function OverviewTab({ project, metrics, tasks, onEdit, sprintCount, docCount, r
             <ProgressBar value={metrics.percentComplete} label="Project progress" />
           </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Stat label="Tasks" value={metrics.total} />
-            <Stat label="Done" value={metrics.done} tone="text-emerald-700" />
-            <Stat label="Overdue" value={metrics.overdue} tone={metrics.overdue ? "text-red-600" : undefined} />
-            <Stat label="Blocked" value={metrics.blocked} tone={metrics.blocked ? "text-amber-600" : undefined} />
-            <Stat label="Due in 7 days" value={metrics.dueSoon} />
-            <Stat label="Unassigned" value={metrics.unassigned} />
-            <Stat label="Schedule index" value={metrics.spi ?? "—"} tone={metrics.spi !== null && metrics.spi < 0.92 ? "text-amber-600" : undefined} />
-            <Stat label="Sprints · docs · reports" value={`${sprintCount} · ${docCount} · ${reportCount}`} />
-          </div>
+          <StatStrip
+            className="mt-5"
+            items={[
+              { label: "Tasks", value: metrics.total },
+              { label: "Done", value: metrics.done, tone: "text-emerald-700" },
+              { label: "Overdue", value: metrics.overdue, tone: metrics.overdue ? "text-red-600" : undefined },
+              { label: "Blocked", value: metrics.blocked, tone: metrics.blocked ? "text-amber-600" : undefined },
+            ]}
+          />
+          <StatStrip
+            className="mt-2"
+            items={[
+              { label: "Due in 7 days", value: metrics.dueSoon },
+              { label: "Unassigned", value: metrics.unassigned },
+              { label: "Schedule index", value: metrics.spi ?? "—", tone: metrics.spi !== null && metrics.spi < 0.92 ? "text-amber-600" : undefined },
+              { label: "Sprints", value: sprintCount },
+            ]}
+          />
           <p className="mt-2 text-[11px] text-slate-400">
             Schedule index = work done ÷ work planned by today. 1.0 is on plan; below 0.9 is behind.
           </p>
@@ -239,6 +238,8 @@ export default function PlannerPage() {
     ? "overview"
     : "schedule";
   const focusedTaskId = searchParams.get("taskId") || "";
+  const viewParam = searchParams.get("view") || "";
+  const reportView = ["analysis", "baselines", "dependencies"].includes(viewParam) ? viewParam : "status";
 
   const [selectedRelationshipTaskId, setSelectedRelationshipTaskId] = useState("");
   const [editingProject, setEditingProject] = useState(false);
@@ -346,78 +347,74 @@ export default function PlannerPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <label htmlFor="planner-project" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-indigo-600">
-            Project
-          </label>
-          <select
-            id="planner-project"
-            value={selectedProjectId}
-            onChange={(event) => updateParams({ projectId: event.target.value, taskId: "" })}
-            className={cx(inputClass, "h-11 w-full max-w-md text-base font-semibold")}
-          >
-            <option value="">All projects ({tasks.length} tasks)</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
+    <div className="space-y-5">
+      <div className="-mx-4 -mt-6 border-b border-slate-200 bg-white px-4 pt-5 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-slate-500">Planner</div>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <label htmlFor="planner-project" className="sr-only">
+                Project
+              </label>
+              <select
+                id="planner-project"
+                value={selectedProjectId}
+                onChange={(event) => updateParams({ projectId: event.target.value, taskId: "" })}
+                className="-ml-1 max-w-full cursor-pointer truncate rounded-lg border border-transparent bg-transparent py-0.5 pl-1 pr-8 text-xl font-semibold tracking-tight text-slate-900 hover:border-slate-200 hover:bg-slate-50 focus:border-indigo-300"
+              >
+                <option value="">All projects</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              {metrics ? <Badge tone={HEALTH_TONE[metrics.health.level]}>{metrics.health.label}</Badge> : null}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              {selectedProject
+                ? [
+                    selectedProject.owner,
+                    selectedProject.targetEndDate ? `Target ${formatDate(selectedProject.targetEndDate)}` : "",
+                    `${filteredTasks.length} tasks`,
+                    "Changes save automatically",
+                  ]
+                    .filter(Boolean)
+                    .join("  ·  ")
+                : `${projects.length} projects · ${tasks.length} tasks · Changes save automatically`}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to="/data" className={buttonClass("secondary")}>
+              <ArrowRightLeft className="h-4 w-4" /> Import / Export
+            </Link>
+            <Link
+              to={`/assistant${selectedProjectId ? `?projectId=${encodeURIComponent(selectedProjectId)}` : ""}`}
+              className={buttonClass("secondary")}
+            >
+              <Sparkles className="h-4 w-4 text-violet-600" /> Ask Claude
+            </Link>
+            <Button variant="primary" icon={ListPlus} onClick={() => openQuickTask(selectedProjectId)} data-testid="add-task">
+              Add task
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {metrics ? <Badge tone={HEALTH_TONE[metrics.health.level]}>{metrics.health.label}</Badge> : null}
-          <span className="text-xs text-slate-500">Changes save automatically</span>
-          <Link
-            to={`/assistant${selectedProjectId ? `?projectId=${encodeURIComponent(selectedProjectId)}` : ""}`}
-            className="inline-flex h-9 items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-3.5 text-sm font-semibold text-white shadow-sm hover:from-violet-700 hover:to-indigo-700"
-          >
-            <Sparkles className="h-4 w-4" /> Ask Claude
-          </Link>
-          <Link
-            to="/data"
-            className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            <ArrowRightLeft className="h-4 w-4" /> Import / Export
-          </Link>
-          <Button variant="primary" icon={ListPlus} onClick={() => openQuickTask(selectedProjectId)} data-testid="add-task">
-            Add task
-          </Button>
-        </div>
+
+        <Tabs
+          className="mt-4 border-b-0"
+          label="Planner views"
+          items={PLANNER_TABS}
+          value={activeTab}
+          onChange={(key) => updateParams({ tab: key, taskId: "", view: "" })}
+        />
       </div>
 
-      <div className="sticky top-0 z-20 -mx-1 bg-slate-50/95 px-1 pb-1 pt-1 backdrop-blur lg:top-0">
-        <nav aria-label="Planner views" className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
-          <div className="flex min-w-max gap-1" role="tablist">
-            {PLANNER_TABS.map((tab) => {
-              const active = activeTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => updateParams({ tab: tab.key, taskId: "" })}
-                  className={cx(
-                    "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition",
-                    active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  )}
-                >
-                  <tab.icon className="h-4 w-4" aria-hidden />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-        <p className="mt-2 px-1 text-xs text-slate-500" data-testid="tab-hint">
-          {currentTab?.hint}
-          {!selectedProjectId && ["schedule", "board", "timeline", "resources"].includes(activeTab)
-            ? " Showing all projects; pick one above to focus."
-            : ""}
-        </p>
-      </div>
+      <p className="-mt-1 text-xs text-slate-500" data-testid="tab-hint">
+        {currentTab?.hint}
+        {!selectedProjectId && ["schedule", "board", "timeline", "resources"].includes(activeTab)
+          ? " Showing all projects; pick one at the top to focus."
+          : ""}
+      </p>
 
       {activeTab === "overview" ? (
         selectedProject ? (
@@ -438,10 +435,10 @@ export default function PlannerPage() {
       <Suspense fallback={<TabLoading />}>
         {activeTab === "schedule" ? (
           <div className="space-y-3">
-            {riskSummary ? <PlannerRiskSummary summary={riskSummary} /> : null}
             <PlannerScheduleAssistPanel
               tasks={filteredTasks}
               conflicts={conflicts}
+              riskSummary={riskSummary}
               schedulingMode={schedulingMode}
               onChangeMode={(mode) => {
                 actions.setSchedulingMode(mode);
@@ -459,7 +456,6 @@ export default function PlannerPage() {
               onBulkUpdate={mergeBackIntoAllTasks}
               selectedProjectId={selectedProjectId}
               focusedTaskId={focusedTaskId}
-              onRecalculate={handleRecalculateSchedule}
             />
           </div>
         ) : null}
@@ -470,19 +466,20 @@ export default function PlannerPage() {
 
         {activeTab === "sprints" ? (
           selectedProjectId ? (
-            <div className="space-y-3">
-              <CollapsibleCard title="Create a sprint" subtitle="A sprint is a fixed period (often 2 weeks) with a goal." defaultOpen={filteredSprints.length === 0}>
-                <SprintForm projectId={selectedProjectId} onSubmit={actions.addSprint} />
-              </CollapsibleCard>
-              <SprintList sprints={filteredSprints} onDelete={actions.deleteSprint} onUpdate={actions.updateSprint} />
-            </div>
+            <SprintList
+              projectId={selectedProjectId}
+              sprints={filteredSprints}
+              onAdd={actions.addSprint}
+              onDelete={actions.deleteSprint}
+              onUpdate={actions.updateSprint}
+            />
           ) : (
             <SelectProjectNotice what="Sprints" />
           )
         ) : null}
 
         {activeTab === "resources" ? (
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="space-y-4">
             <PlannerResourcesView tasks={filteredTasks} />
             <PlannerRelationshipPanel
               tasks={filteredTasks}
@@ -504,28 +501,42 @@ export default function PlannerPage() {
         ) : null}
 
         {activeTab === "reports" ? (
-          <div className="space-y-3">
-            <WeeklyCeoReportView
-              selectedProject={selectedProject}
-              tasks={filteredTasks}
-              weeklyReports={filteredWeeklyReports}
-              onAddReport={actions.addWeeklyReport}
-              onUpdateReport={actions.updateWeeklyReport}
-              onDeleteReport={actions.deleteWeeklyReport}
+          <div className="space-y-4">
+            <Segmented
+              label="Report type"
+              value={reportView}
+              onChange={(value) => updateParams({ view: value === "status" ? "" : value })}
+              options={[
+                { value: "status", label: "Status reports" },
+                { value: "analysis", label: "Analysis" },
+                { value: "baselines", label: "Baselines" },
+                { value: "dependencies", label: "Dependencies" },
+              ]}
             />
-            <CollapsibleCard title="Baselines" subtitle="Save a snapshot of the plan, then compare how dates have moved since.">
-              <PlannerBaselinePanel
-                selectedProjectId={selectedProjectId}
+            {reportView === "status" ? (
+              <WeeklyCeoReportView
+                selectedProject={selectedProject}
                 tasks={filteredTasks}
-                snapshots={baselineSnapshots}
-                onCreateSnapshot={actions.createBaselineSnapshot}
+                weeklyReports={filteredWeeklyReports}
+                onAddReport={actions.addWeeklyReport}
+                onUpdateReport={actions.updateWeeklyReport}
+                onDeleteReport={actions.deleteWeeklyReport}
               />
-            </CollapsibleCard>
-            <PlannerReportsView tasks={filteredTasks} />
-            <div className="grid gap-3 xl:grid-cols-2">
-              <PlannerDependencyGraphStarter graph={dependencyGraph} />
-              <PlannerDependencyGraphVisual graph={dependencyGraph} />
-            </div>
+            ) : null}
+            {reportView === "analysis" ? <PlannerReportsView tasks={filteredTasks} /> : null}
+            {reportView === "baselines" ? (
+              <Panel title="Baselines" subtitle="Save a snapshot of the plan, then see how dates moved since.">
+                <div className="p-5">
+                  <PlannerBaselinePanel
+                    selectedProjectId={selectedProjectId}
+                    tasks={filteredTasks}
+                    snapshots={baselineSnapshots}
+                    onCreateSnapshot={actions.createBaselineSnapshot}
+                  />
+                </div>
+              </Panel>
+            ) : null}
+            {reportView === "dependencies" ? <PlannerDependencyGraphStarter graph={dependencyGraph} /> : null}
           </div>
         ) : null}
       </Suspense>

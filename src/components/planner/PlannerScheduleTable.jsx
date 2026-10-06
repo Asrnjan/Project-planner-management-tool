@@ -13,7 +13,6 @@ import {
   Lock,
   Unlock,
   Milestone,
-  GitBranch,
   Rows3,
   RotateCcw,
 } from "lucide-react";
@@ -24,7 +23,7 @@ function HeaderCell({ children, className = "", title }) {
     <th
       scope="col"
       title={title}
-      className={`px-1.5 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500 ${className}`}
+      className={`px-1.5 py-2 text-left text-xs font-semibold text-slate-500 ${className}`}
     >
       {children}
     </th>
@@ -36,10 +35,10 @@ function GridInput({ readOnly = false, className = "", ...props }) {
     <input
       {...props}
       readOnly={readOnly}
-      className={`w-full rounded-md border px-1.5 py-1.5 text-[11px] leading-4 transition ${
+      className={`w-full rounded-md border px-1.5 py-1 text-[13px] leading-5 transition ${
         readOnly
-          ? "border-slate-200 bg-slate-100 text-slate-600"
-          : "border-slate-200 bg-white text-slate-900 focus:border-slate-400 focus:outline-none"
+          ? "border-transparent bg-transparent text-slate-500"
+          : "border-transparent bg-transparent text-slate-900 hover:border-slate-200 focus:border-indigo-400 focus:bg-white focus:outline-none"
       } ${className}`}
     />
   );
@@ -51,16 +50,16 @@ function GridSelect({ disabled = false, className = "", children, ...props }) {
       <select
         {...props}
         disabled={disabled}
-        className={`w-full appearance-none rounded-md border px-1.5 py-1.5 pr-6 text-[11px] leading-4 transition ${
+        className={`w-full appearance-none rounded-md border px-1.5 py-1 pr-6 text-[13px] leading-5 transition ${
           disabled
-            ? "border-slate-200 bg-slate-100 text-slate-600"
-            : "border-slate-200 bg-white text-slate-900 focus:border-slate-400 focus:outline-none"
+            ? "border-transparent bg-transparent text-slate-500"
+            : "border-transparent bg-transparent text-slate-900 hover:border-slate-200 focus:border-indigo-400 focus:bg-white focus:outline-none"
         } ${className}`}
       >
         {children}
       </select>
 
-      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400" />
+      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-300" />
     </div>
   );
 }
@@ -68,13 +67,13 @@ function GridSelect({ disabled = false, className = "", children, ...props }) {
 function statusSelectClass(status) {
   switch (status) {
     case "Done":
-      return "border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold";
+      return "!bg-emerald-50 !text-emerald-700 font-medium";
     case "In Progress":
-      return "border-blue-200 bg-blue-50 text-blue-700 font-semibold";
+      return "!bg-blue-50 !text-blue-700 font-medium";
     case "Blocked":
-      return "border-red-200 bg-red-50 text-red-700 font-semibold";
+      return "!bg-red-50 !text-red-700 font-medium";
     default:
-      return "border-slate-200 bg-white text-slate-700";
+      return "text-slate-600";
   }
 }
 
@@ -100,16 +99,14 @@ function IconActionButton({ title, className = "", children, ...props }) {
 function ToolbarButton({ children, variant = "secondary", ...props }) {
   const variantClass =
     variant === "primary"
-      ? "bg-slate-900 text-white hover:bg-slate-800"
-      : variant === "blue"
-      ? "bg-blue-50 text-blue-700 hover:bg-blue-100"
-      : "bg-slate-100 text-slate-700 hover:bg-slate-200";
+      ? "bg-indigo-600 text-white hover:bg-indigo-700"
+      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900";
 
   return (
     <button
       type="button"
       {...props}
-      className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${variantClass}`}
+      className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition ${variantClass}`}
     >
       {children}
     </button>
@@ -307,7 +304,7 @@ const ScheduleRow = memo(function ScheduleRow({
     <tr
       ref={rowRef}
       onClick={() => onSelectRow(task.id)}
-      className={`border-b border-slate-200 transition ${
+      className={`border-b border-slate-100 transition ${
         isFlashing
           ? "bg-yellow-100"
           : isSelected
@@ -317,11 +314,11 @@ const ScheduleRow = memo(function ScheduleRow({
           : "bg-white hover:bg-slate-50/60"
       }`}
     >
-      <td className="px-1 py-1.5 align-top text-[11px] text-slate-500">
+      <td className="px-1 py-1 align-middle text-[11px] text-slate-500">
         {index + 1}
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <span
           className={`inline-flex rounded-md px-1.5 py-1 text-[10px] font-semibold ${
             isSummaryTask
@@ -333,7 +330,7 @@ const ScheduleRow = memo(function ScheduleRow({
         </span>
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <div
           className="flex items-center gap-1"
           style={{ paddingLeft: `${depth * 10}px` }}
@@ -379,7 +376,7 @@ const ScheduleRow = memo(function ScheduleRow({
         </div>
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <GridSelect
           value={draft.sprintId}
           disabled={isSummaryTask || !selectedProjectId}
@@ -394,7 +391,7 @@ const ScheduleRow = memo(function ScheduleRow({
         </GridSelect>
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <label
           className={`inline-flex items-center gap-1 rounded-md px-1.5 py-1 ${
             draft.isMilestone
@@ -415,7 +412,7 @@ const ScheduleRow = memo(function ScheduleRow({
         </label>
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <GridInput
           type="number"
           min="1"
@@ -425,7 +422,7 @@ const ScheduleRow = memo(function ScheduleRow({
         />
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <GridInput
           type="date"
           readOnly={isSummaryTask}
@@ -434,7 +431,7 @@ const ScheduleRow = memo(function ScheduleRow({
         />
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <GridInput
           type="date"
           readOnly={isSummaryTask}
@@ -443,7 +440,7 @@ const ScheduleRow = memo(function ScheduleRow({
         />
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <GridInput
           value={draft.predecessorInput}
           readOnly={isSummaryTask}
@@ -458,7 +455,7 @@ const ScheduleRow = memo(function ScheduleRow({
         />
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <GridInput
           value={draft.owner}
           readOnly={false}
@@ -466,7 +463,7 @@ const ScheduleRow = memo(function ScheduleRow({
         />
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <GridInput
           type="number"
           min="0"
@@ -484,7 +481,7 @@ const ScheduleRow = memo(function ScheduleRow({
         </div>
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <GridSelect
           value={draft.status}
           disabled={isSummaryTask}
@@ -498,7 +495,7 @@ const ScheduleRow = memo(function ScheduleRow({
         </GridSelect>
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <GridInput
           type="number"
           min="0"
@@ -511,7 +508,7 @@ const ScheduleRow = memo(function ScheduleRow({
         />
       </td>
 
-      <td className="px-1 py-1.5 align-top">
+      <td className="px-1 py-1 align-middle">
         <div className="flex items-center justify-end gap-1">
           {!isSummaryTask ? (
             <IconActionButton
@@ -587,7 +584,6 @@ export default function PlannerScheduleTable({
   onDeleteTask,
   selectedProjectId,
   focusedTaskId,
-  onRecalculate,
 }) {
   const { ordered } = useMemo(() => buildTaskIndexMaps(tasks), [tasks]);
 
@@ -910,91 +906,35 @@ export default function PlannerScheduleTable({
 
   return (
     <div
-      className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
       onKeyDown={handleGridKeyDown}
       tabIndex={0}
     >
-      <div className="border-b border-slate-200 px-3 py-3">
-        <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-              <GitBranch className="h-3.5 w-3.5" />
-              Planning Grid
-            </div>
-
-            <h3 className="mt-2 text-sm font-semibold tracking-tight text-slate-900">
-              Schedule, subtasks, milestones, and dependencies
-            </h3>
-
-            <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
-              Edit freely. A row saves when you leave the edited cell.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            <ToolbarButton variant="primary" onClick={handleAddRow}>
-              Add
-            </ToolbarButton>
-
-            <ToolbarButton onClick={() => handleInsertBelow()}>
-              Insert
-            </ToolbarButton>
-
-            <ToolbarButton onClick={() => handleAddSubtask(selectedRowId)}>
-              Subtask
-            </ToolbarButton>
-
-            <ToolbarButton onClick={expandAll}>Expand</ToolbarButton>
-
-            <ToolbarButton onClick={collapseAll}>Collapse</ToolbarButton>
-
-            <ToolbarButton onClick={handleUndo}>
-              <span className="inline-flex items-center gap-1">
-                <RotateCcw className="h-3.5 w-3.5" />
-                Undo
-              </span>
-            </ToolbarButton>
-
-            <ToolbarButton variant="blue" onClick={onRecalculate}>
-              Recalc
-            </ToolbarButton>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ToolbarButton variant="primary" onClick={handleAddRow} title="Add a task at the end">
+            <Plus className="h-3.5 w-3.5" /> Add row
+          </ToolbarButton>
+          <ToolbarButton onClick={() => handleInsertBelow()} title="Insert a task below the selected row">
+            Insert
+          </ToolbarButton>
+          <ToolbarButton onClick={() => handleAddSubtask(selectedRowId)} title="Add a subtask under the selected row">
+            Subtask
+          </ToolbarButton>
+          <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden />
+          <ToolbarButton onClick={expandAll}>Expand all</ToolbarButton>
+          <ToolbarButton onClick={collapseAll}>Collapse all</ToolbarButton>
+          <ToolbarButton onClick={handleUndo} title="Undo the last change (Ctrl + Z)">
+            <RotateCcw className="h-3.5 w-3.5" /> Undo
+          </ToolbarButton>
         </div>
-
-        <div className="mt-3 grid gap-2 text-[10px] md:grid-cols-5">
-          <div className="rounded-xl bg-slate-50 px-3 py-2">
-            <span className="font-semibold text-slate-900">
-              {hierarchyStats.total}
-            </span>{" "}
-            <span className="text-slate-500">total rows</span>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 px-3 py-2">
-            <span className="font-semibold text-slate-900">
-              {hierarchyStats.summaryRows}
-            </span>{" "}
-            <span className="text-slate-500">summary rows</span>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 px-3 py-2">
-            <span className="font-semibold text-slate-900">
-              {hierarchyStats.leafRows}
-            </span>{" "}
-            <span className="text-slate-500">leaf tasks</span>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 px-3 py-2">
-            <span className="font-semibold text-slate-900">
-              {hierarchyStats.milestones}
-            </span>{" "}
-            <span className="text-slate-500">milestones</span>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 px-3 py-2">
-            <span className="font-semibold text-slate-900">
-              {lastActionText}
-            </span>
-          </div>
+        <div className="flex items-center gap-3 text-xs text-slate-500">
+          <span>
+            {hierarchyStats.total} rows · {hierarchyStats.milestones} milestones
+          </span>
+          <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-600" aria-live="polite">
+            {lastActionText}
+          </span>
         </div>
       </div>
 
@@ -1029,7 +969,7 @@ export default function PlannerScheduleTable({
               <HeaderCell>Finish</HeaderCell>
               <HeaderCell title="Rows that must finish before this one starts">Depends on</HeaderCell>
               <HeaderCell>Owner</HeaderCell>
-              <HeaderCell title="How much should be done by now (plan)">Planned %</HeaderCell>
+              <HeaderCell title="How much should be done by now (plan)">Plan %</HeaderCell>
               <HeaderCell>Status</HeaderCell>
               <HeaderCell title="How much is actually done">Done %</HeaderCell>
               <HeaderCell title="Lock dates, insert below, delete">Actions</HeaderCell>
@@ -1075,28 +1015,8 @@ export default function PlannerScheduleTable({
         </table>
       </div>
 
-      <div className="border-t border-slate-200 bg-slate-50/60 px-3 py-2">
-        <div className="grid gap-1 text-[10px] text-slate-600 md:grid-cols-4">
-          <div>
-            <span className="font-medium text-slate-800">Save:</span> row saves
-            after leaving the edited cell.
-          </div>
-
-          <div>
-            <span className="font-medium text-slate-800">Undo:</span> Ctrl + Z
-            rolls back the last saved row change.
-          </div>
-
-          <div>
-            <span className="font-medium text-slate-800">Performance:</span>{" "}
-            only the edited row re-renders.
-          </div>
-
-          <div>
-            <span className="font-medium text-slate-800">Actions:</span> lock,
-            insert, subtask, delete.
-          </div>
-        </div>
+      <div className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">
+        Click a cell to edit; changes save when you leave it. Ctrl + Z undoes the last change. Depends on: type row or WBS numbers, e.g. "1, 3".
       </div>
     </div>
   );

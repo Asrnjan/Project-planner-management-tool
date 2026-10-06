@@ -137,6 +137,40 @@ test.describe("planning", () => {
     await expect(page.locator("div[draggable=true]").filter({ hasText: "Train the sales team" }).getByRole("button", { name: "Start" })).toHaveCount(0);
   });
 
+  test("sprints and documents are managed in dialogs", async ({ page }) => {
+    const errors = trackErrors(page);
+    await mockClaude(page);
+    await loadSample(page);
+    await page.getByTestId("project-card").filter({ hasText: "Website Relaunch" }).getByRole("link", { name: "Open" }).click();
+
+    await page.getByRole("tab", { name: "Sprints" }).click();
+    await page.getByRole("button", { name: "New sprint" }).click();
+    const sprintDialog = page.getByRole("dialog", { name: "New sprint" });
+    await sprintDialog.getByLabel("Sprint name").fill("Sprint 4 - Launch");
+    await sprintDialog.getByLabel("Start date").fill("2026-10-18");
+    await sprintDialog.getByLabel("End date").fill("2026-10-31");
+    await sprintDialog.getByRole("button", { name: "Create sprint" }).click();
+    await expect(page.getByRole("heading", { name: "Sprint 4 - Launch" })).toBeVisible();
+
+    await page.getByRole("tab", { name: "Documents" }).click();
+    await page.getByRole("button", { name: "Add document" }).click();
+    const docDialog = page.getByRole("dialog", { name: "Add document" });
+    await docDialog.getByLabel("Title").fill("Launch checklist");
+    await docDialog.getByLabel("Link").fill("not a url");
+    await docDialog.getByRole("button", { name: "Add document" }).click();
+    await expect(docDialog.getByRole("alert")).toContainText("http");
+    await docDialog.getByLabel("Link").fill("https://example.com/checklist");
+    await docDialog.getByRole("button", { name: "Add document" }).click();
+    await expect(page.getByRole("link", { name: /Launch checklist/ })).toHaveAttribute("href", "https://example.com/checklist");
+
+    await page.getByRole("tab", { name: "Reports" }).click();
+    for (const view of ["Analysis", "Baselines", "Dependencies", "Status reports"]) {
+      await page.getByRole("radio", { name: view }).click();
+      await expect(page.getByRole("radio", { name: view })).toHaveAttribute("aria-checked", "true");
+    }
+    errors.assertNone();
+  });
+
   test("deleting a project asks for confirmation", async ({ page }) => {
     await mockClaude(page);
     await loadSample(page);

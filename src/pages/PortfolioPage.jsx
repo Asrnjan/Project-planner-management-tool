@@ -37,6 +37,7 @@ import {
   Modal,
   PageHeader,
   ProgressBar,
+  buttonClass,
   cx,
   inputClass,
 } from "../ui/primitives";
@@ -80,7 +81,7 @@ function StatTile({ label, value, sub, icon: Icon, tone = "slate", to }) {
       {sub ? <div className="mt-0.5 text-xs text-slate-500">{sub}</div> : null}
     </>
   );
-  const className = "block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition";
+  const className = "block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition";
   return to ? (
     <Link to={to} className={cx(className, "hover:border-slate-300 hover:shadow")}>
       {content}
@@ -385,13 +386,13 @@ function ProjectCard({ project, metrics, onEdit }) {
       <div className="mt-4 flex gap-2">
         <Link
           to={href}
-          className="inline-flex flex-1 items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          className={cx(buttonClass("primary"), "flex-1")}
         >
           Open
         </Link>
         <Link
           to={`/planner?projectId=${encodeURIComponent(project.id)}&tab=timeline`}
-          className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className={buttonClass("secondary")}
         >
           Timeline
         </Link>

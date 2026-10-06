@@ -108,9 +108,9 @@ function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout 
             onClick={onNavigate}
             className={({ isActive }) =>
               cx(
-                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition",
+                "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition",
                 isActive
-                  ? "bg-slate-900 text-white shadow-sm"
+                  ? "bg-indigo-50 text-indigo-700"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               )
             }
@@ -120,7 +120,7 @@ function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout 
                 <item.icon
                   className={cx(
                     "h-4 w-4 shrink-0",
-                    item.to === "/assistant" && !isActive ? "text-violet-600" : ""
+                    isActive ? "text-indigo-600" : item.to === "/assistant" ? "text-violet-600" : "text-slate-400"
                   )}
                   aria-hidden
                 />
@@ -152,7 +152,7 @@ function SidebarContent({ onNavigate, localMode, canSignIn, userEmail, onLogout 
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold uppercase text-indigo-700">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
               {(userEmail || "?").slice(0, 1)}
             </div>
             <div className="min-w-0 flex-1 truncate text-xs text-slate-600" title={userEmail}>

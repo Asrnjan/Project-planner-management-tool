@@ -19,7 +19,7 @@ export default class ErrorBoundary extends Component {
     if (!this.state.error) return this.props.children;
 
     return (
-      <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-6">
+      <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6">
         <h2 className="text-base font-semibold text-red-900">This screen hit a problem</h2>
         <p className="mt-1 text-sm text-red-800">
           Your data is safe. Try again, or go back to the dashboard.

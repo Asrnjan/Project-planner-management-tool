@@ -41,7 +41,7 @@ function writeLocalModeChoice(enabled) {
 function FullPageMessage({ children }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         {children}
       </div>
     </div>
@@ -50,7 +50,7 @@ function FullPageMessage({ children }) {
 
 export function PageLoading() {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600" />
       Loading...
     </div>
