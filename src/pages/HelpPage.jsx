@@ -132,7 +132,7 @@ export default function HelpPage() {
             <li><strong>Jira:</strong> export issues as CSV, or use the JSON from the Jira API. Epics become parent tasks.</li>
             <li><strong>Asana:</strong> export the project as CSV or JSON. Sections become sprints.</li>
             <li><strong>Trello:</strong> board menu → Print, export and share → Export as JSON. Lists become statuses; checklists become subtasks.</li>
-            <li><strong>Microsoft Project:</strong> File → Save As → XML. Native .mpp also works when the converter server is running.</li>
+            <li><strong>Microsoft Project:</strong> drop in the .mpp file (or .xml, .mpx). Primavera P6 (.xer), GanttProject (.gan), ProjectLibre (.pod) and Asta (.pp) files work too. Binary files are converted by the backend, which starts with <code className="rounded bg-slate-100 px-1">npm run dev</code> and needs Java.</li>
             <li>Dates in any common format are understood; for dates like 03/04/2025 you can choose day-first or month-first.</li>
           </ul>
         </Card>

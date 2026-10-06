@@ -17,7 +17,8 @@ status reports.
   - **Reports**: weekly status reports with PowerPoint export, baselines and
     dependency analysis.
 - **Import from almost anything**: Excel, CSV/TSV, ODS, Google Sheets, Jira,
-  Asana, Trello, Monday, ClickUp, Smartsheet, MS Project XML and `.mpp`.
+  Asana, Trello, Monday, ClickUp, Smartsheet, MS Project (`.mpp`, `.xml`,
+  `.mpx`), Primavera P6 (`.xer`), GanttProject, ProjectLibre and Asta.
   Columns, date formats, statuses and priorities are matched automatically,
   with a review step before anything is imported.
 - **Export** to a JSON backup, Excel, CSV, MS Project XML and calendar (.ics);
@@ -35,26 +36,35 @@ Requires Node.js 22+.
 
 ```bash
 npm install
-npm run dev            # http://localhost:5173, local mode
+npm run dev            # http://localhost:5173
 ```
+
+`npm run dev` starts the web app and the backend together (the backend
+serves Claude and the `.mpp` converter; Ctrl+C stops both). Use
+`npm run dev:web` for the web app alone.
 
 With no `.env`, the app runs in **local mode**: no sign-in, data in the
 browser. Click **Load sample data** on the first screen to explore.
 
-To enable cloud sync and Claude locally:
+### Testing Claude locally
 
-```bash
-cp .env.example .env   # fill in the values you need (see below)
-npm run dev:backend    # serves /api/ai (and the .mpp converter) on :5050
-npm run dev            # Vite proxies /api to the backend
-```
+1. Create an API key at console.anthropic.com → API Keys.
+2. Add it to `.env` in the project folder:
+   ```
+   ANTHROPIC_API_KEY=sk-ant-...
+   ```
+   If your `.env` also has Supabase settings, sign in to use Claude, or add
+   `AI_ALLOW_ANONYMOUS=true` to try it in local mode.
+3. Restart `npm run dev`. The **Ask Claude** page shows "Connected".
+
+The key is only read by the backend and never reaches the browser.
 
 ## Configuration
 
 | Variable | Where | Purpose |
 |---|---|---|
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | build | Sign-in and cloud sync. Leave empty for local mode only. |
-| `VITE_MSPROJECT_BACKEND_URL` | build | URL of the optional `.mpp` converter. |
+| `VITE_MSPROJECT_BACKEND_URL` | build | Only if the converter is hosted on another domain. Locally it is reached through the dev proxy. |
 | `ANTHROPIC_API_KEY` | server | Enables Claude. Never exposed to browsers. |
 | `AI_MODEL` | server | Default `claude-opus-5-5`. |
 | `AI_EFFORT` | server | Default `low` (cheapest). `medium`/`high` for deeper analysis. |
@@ -110,24 +120,33 @@ The **Ask Claude** page shows the tokens used this month (counted in the
 browser), and each answer shows its token count or "no tokens used" when it
 came from a cache.
 
-## Microsoft Project `.mpp` files
+## Microsoft Project `.mpp` and other binary project files
 
-MS Project XML import and export run entirely in the browser. Native `.mpp`
-import needs the optional converter in `backend/` (Node + Java 17 + MPXJ):
+MS Project XML import and export run entirely in the browser. Binary files
+(`.mpp`, `.mpt`, `.mpx`, Primavera `.xer`/P6 XML, GanttProject `.gan`,
+ProjectLibre `.pod`, Asta `.pp`) are converted by the backend using
+[MPXJ](https://www.mpxj.org/):
 
-```bash
-cd backend/java-mpxj && mvn -q compile dependency:copy-dependencies
-cd .. && npm install && npm run dev
-```
+- **Only Java 17+ is needed.** The converter builds itself the first time
+  the backend starts (about 15–60 seconds). It uses Maven from `MAVEN_HOME`
+  or the `PATH` if you have it, otherwise the bundled Maven Wrapper
+  downloads Maven automatically. It rebuilds by itself when its source
+  changes.
+- Java is found through `JAVA_HOME`, or `java` on the `PATH`.
+- `GET /api/convert/status` reports `building`, `ready`, `failed` or
+  `no-java`.
+- The converted MS Project XML is parsed in the browser, so every format
+  gets the same handling of hierarchy, dependencies, resources and progress.
 
-It uses `JAVA_HOME`, or `java` on the `PATH`. Set `ALLOWED_ORIGINS` (comma
-separated) if the backend is reachable from the internet.
+To host the converter separately in production, deploy `backend/` to any
+Node host with Java, set `VITE_MSPROJECT_BACKEND_URL` to its URL, and set
+`ALLOWED_ORIGINS` on the backend to your site's URL.
 
 ## Testing
 
 ```bash
 npm run lint
-npm test               # 96 unit tests: analytics, importers, exports, AI handler, database security
+npm test               # 98 unit tests: analytics, importers, exports, AI handler, database security, .mpp converter
 npm run test:e2e       # 13 Playwright tests against the production build (Claude mocked)
 npm run check          # lint + unit tests + build
 ```

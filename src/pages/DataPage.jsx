@@ -25,16 +25,21 @@ import {
   cx,
   inputClass,
 } from "../ui/primitives";
-import { ACCEPTED_EXTENSIONS, readImportFile } from "../services/importExport/readers";
+import {
+  ACCEPTED_EXTENSIONS,
+  CONVERTED_EXTENSIONS,
+  fileExtension,
+  readImportFile,
+} from "../services/importExport/readers";
 import { FIELD_LABELS, MAPPABLE_FIELDS, autoMapColumns, mappingQuality } from "../services/importExport/columnMapper";
 import { rowsToPlannerData } from "../services/importExport/tableToPlanner";
 import { EXPORT_FORMATS, exportWorkspace, scopeWorkspace, triggerDownload } from "../services/importExport/exporters";
-import { importMsProjectFile } from "../services/msProjectService";
+import { convertProjectFile, getConverterStatus } from "../services/msProjectService";
 import { runAi, getAiStatus } from "../services/aiService";
 import { buildColumnMappingInput } from "../domain/aiContext";
 import { buildSampleWorkspace } from "../data/sampleWorkspace";
 
-const SOURCES = ["Excel", "CSV", "Google Sheets", "Jira", "Asana", "Trello", "Monday.com", "ClickUp", "Smartsheet", "MS Project", "Planner backups"];
+const SOURCES = ["Excel", "CSV", "Google Sheets", "Jira", "Asana", "Trello", "Monday.com", "ClickUp", "Smartsheet", "MS Project (.mpp/.xml)", "Primavera P6", "GanttProject", "ProjectLibre", "Planner backups"];
 
 const TEMPLATE_CSV =
   "\uFEFFProject,Task Name,Parent Task,Assigned To,Status,Priority,Start Date,Due Date,% Complete,Milestone,Depends On,Notes\n" +
@@ -83,8 +88,9 @@ function DropZone({ onFile, busy }) {
         {busy ? "Reading your file..." : "Drop a file here, or choose one"}
       </p>
       <p className="mt-1 max-w-lg text-xs text-slate-500">
-        Excel (.xlsx, .xls, .ods), CSV/TSV, JSON, Microsoft Project XML or .mpp. Columns are
-        matched automatically; you can adjust them before anything is imported.
+        Excel (.xlsx, .xls, .ods), CSV/TSV, JSON, Microsoft Project (.mpp, .xml), Primavera
+        (.xer), GanttProject (.gan) or ProjectLibre (.pod). Columns are matched automatically;
+        you can adjust them before anything is imported.
       </p>
       <Button className="mt-4" variant="primary" icon={Upload} onClick={() => inputRef.current?.click()} disabled={busy}>
         Choose file
@@ -187,7 +193,13 @@ function ImportWizard() {
     setError("");
     setParsed(null);
     try {
-      const result = await readImportFile(nextFile, { importMpp: importMsProjectFile });
+      if (CONVERTED_EXTENSIONS.includes(fileExtension(nextFile.name))) {
+        const converter = await getConverterStatus();
+        if (converter.status === "building") {
+          notify.info("Preparing the file converter. This happens once and can take a minute or two...", { duration: 15000 });
+        }
+      }
+      const result = await readImportFile(nextFile, { convertFile: convertProjectFile });
       setFile(nextFile);
       setParsed(result);
       setMapping(result.mapping || {});

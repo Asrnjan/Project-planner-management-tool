@@ -29,7 +29,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["src/**/*.test.{js,jsx}", "server/**/*.test.mjs", "supabase/**/*.test.mjs"],
+    include: ["src/**/*.test.{js,jsx}", "server/**/*.test.mjs", "supabase/**/*.test.mjs", "backend/**/*.test.mjs"],
     environment: "node",
   },
 });

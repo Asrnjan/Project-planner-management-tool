@@ -4,8 +4,8 @@
   "description": "Backend for MS Project XML import and export",
   "main": "server.js",
   "scripts": {
-    "dev": "node --env-file-if-exists=../.env --env-file-if-exists=.env server.js",
-    "start": "node --env-file-if-exists=.env server.js"
+    "dev": "node server.js",
+    "start": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -39,7 +39,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['netlify/**/*.{js,mjs}', 'server/**/*.{js,mjs}', 'supabase/**/*.mjs', 'backend/**/*.js', '*.config.js', 'tests/**/*.{js,mjs}', 'e2e/**/*.{js,mjs}'],
+    files: ['netlify/**/*.{js,mjs}', 'server/**/*.{js,mjs}', 'supabase/**/*.mjs', 'backend/**/*.js', 'backend/**/*.mjs', 'scripts/**/*.mjs', '*.config.js', 'tests/**/*.{js,mjs}', 'e2e/**/*.{js,mjs}'],
     extends: [js.configs.recommended],
     languageOptions: {
       ecmaVersion: 'latest',

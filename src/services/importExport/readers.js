@@ -8,9 +8,25 @@ import { autoMapColumns, mappingQuality, normalizeHeader } from "./columnMapper"
 import { normalizePriority, normalizeTaskStatus } from "../../domain/vocabulary";
 import { cleanText, parseBoolean, parseDate, parseDurationDays, parsePercent } from "./values";
 
+// Formats the backend converter turns into MS Project XML.
+export const CONVERTED_EXTENSIONS = [".mpp", ".mpt", ".mpx", ".xer", ".pmxml", ".gan", ".pod", ".pp"];
+
 export const ACCEPTED_EXTENSIONS = [
-  ".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls", ".ods", ".json", ".xml", ".mpp",
+  ".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls", ".ods", ".json", ".xml",
+  ...CONVERTED_EXTENSIONS,
 ];
+
+const CONVERTED_LABELS = {
+  ".mpp": "Microsoft Project (.mpp)",
+  ".mpt": "Microsoft Project template (.mpt)",
+  ".mpx": "Microsoft Project exchange (.mpx)",
+  ".xer": "Primavera P6 (.xer)",
+  ".pmxml": "Primavera P6 XML",
+  ".gan": "GanttProject (.gan)",
+  ".pod": "ProjectLibre (.pod)",
+  ".pp": "Asta Powerproject (.pp)",
+  ".xml": "Project XML (converted)",
+};
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
@@ -471,7 +487,8 @@ export function msProjectXmlToPlanner(xmlText, fileName = "") {
 
 /**
  * @param {File} file
- * @param {{ importMpp?: (file: File) => Promise<object> }} options
+ * @param {{ convertFile?: (file: File) => Promise<string> }} options
+ *   convertFile turns binary project files into MS Project XML (backend).
  */
 export async function readImportFile(file, options = {}) {
   if (!file) throw new Error("No file selected.");
@@ -484,16 +501,22 @@ export async function readImportFile(file, options = {}) {
   if ([".xlsx", ".xlsm", ".xls", ".ods"].includes(ext)) return readWorkbook(file);
   if (ext === ".json") return readJson(file);
   if (ext === ".xml") {
-    return { kind: "planner", label: "Microsoft Project XML", data: msProjectXmlToPlanner(await file.text(), file.name) };
+    const text = await file.text();
+    try {
+      return { kind: "planner", label: "Microsoft Project XML", data: msProjectXmlToPlanner(text, file.name) };
+    } catch (error) {
+      // Other project XML (e.g. Primavera P6) can still be read by the converter.
+      if (!options.convertFile || !/not a Microsoft Project/.test(error.message)) throw error;
+    }
   }
-  if (ext === ".mpp") {
-    if (!options.importMpp) throw new Error("Native .mpp files need the converter server.");
-    const data = await options.importMpp(file);
-    return { kind: "planner", label: "Microsoft Project (.mpp)", data };
+  if (CONVERTED_EXTENSIONS.includes(ext) || ext === ".xml") {
+    if (!options.convertFile) throw new Error(`${ext} files need the converter server.`);
+    const xml = await options.convertFile(file);
+    return { kind: "planner", label: CONVERTED_LABELS[ext] || "Project file", data: msProjectXmlToPlanner(xml, file.name) };
   }
 
   throw new Error(
-    `"${ext || file.name}" files are not supported. Use Excel, CSV, JSON, MS Project XML or .mpp.`
+    `"${ext || file.name}" files are not supported. Use Excel, CSV, JSON, MS Project (.mpp/.xml), Primavera, GanttProject or ProjectLibre files.`
   );
 }
 

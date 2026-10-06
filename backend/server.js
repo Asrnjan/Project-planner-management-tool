@@ -1,10 +1,26 @@
+const path = require("path");
+
+// Settings come from the project's .env (and optionally backend/.env).
+// Variables already set in the environment win.
+for (const envFile of [path.join(__dirname, ".env"), path.join(__dirname, "..", ".env")]) {
+  try {
+    process.loadEnvFile(envFile);
+  } catch {
+    // File missing: fine.
+  }
+}
+
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
-const path = require("path");
-const { spawn } = require("child_process");
 const xml2js = require("xml2js");
+const {
+  CONVERTIBLE_EXTENSIONS,
+  convertToMsProjectXml,
+  ensureBuilt,
+  getConverterStatus,
+} = require("./converter");
 
 const app = express();
 const PORT = process.env.PORT || 5050;
@@ -73,85 +89,6 @@ function makeTaskId(index) {
   return `task-import-${Date.now()}-${index}`;
 }
 
-function runMppToXmlConverter(inputPath, outputPath) {
-  return new Promise((resolve, reject) => {
-    const javaProjectDir = path.join(__dirname, "java-mpxj");
-
-    // Uses JAVA_HOME when set, otherwise `java` from PATH. Works on
-    // Windows, macOS and Linux.
-    const javaHome = process.env.JAVA_HOME || "";
-    const javaBinary = process.platform === "win32" ? "java.exe" : "java";
-    const javaExe = javaHome ? path.join(javaHome, "bin", javaBinary) : javaBinary;
-
-    const targetClasses = path.join(javaProjectDir, "target", "classes");
-    const dependencyDir = path.join(javaProjectDir, "target", "dependency");
-
-    if (javaHome && !fs.existsSync(javaExe)) {
-      reject(new Error(`Java not found at ${javaExe}. Check JAVA_HOME (Java 17+ is required).`));
-      return;
-    }
-
-    if (!fs.existsSync(targetClasses) || !fs.existsSync(dependencyDir)) {
-      reject(
-        new Error(
-          "The .mpp converter is not built. Run `mvn -q compile dependency:copy-dependencies` inside backend/java-mpxj, or import MS Project XML instead (File > Save As > XML in Microsoft Project)."
-        )
-      );
-      return;
-    }
-
-    const dependencyJars = fs
-      .readdirSync(dependencyDir)
-      .filter((file) => file.toLowerCase().endsWith(".jar"))
-      .map((file) => path.join(dependencyDir, file));
-
-    const classpath = [targetClasses, ...dependencyJars].join(path.delimiter);
-
-    const args = [
-      "-cp",
-      classpath,
-      "com.planner.MppToXmlConverter",
-      inputPath,
-      outputPath,
-    ];
-
-    const child = spawn(javaExe, args, {
-      cwd: javaProjectDir,
-      shell: false,
-      windowsHide: true,
-      env: process.env,
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    child.on("error", (error) => {
-      reject(new Error(`Could not run Java converter. ${error.message}`));
-    });
-
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(
-          new Error(
-            stderr ||
-              stdout ||
-              "MPP conversion failed. Please check if the .mpp file is valid."
-          )
-        );
-      }
-    });
-  });
-}
 
 function projectXmlToPlannerData(xmlObject) {
   const projectRoot = xmlObject.Project || xmlObject.project;
@@ -407,6 +344,51 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+// Converts .mpp (and other formats MPXJ reads) to Microsoft Project XML.
+// The browser parses the XML with the same code it uses for XML imports.
+app.get("/api/convert/status", (_req, res) => {
+  res.json(getConverterStatus());
+});
+
+app.post("/api/convert", upload.single("file"), async (req, res) => {
+  const uploadedPath = req.file?.path || "";
+  const outputPath = uploadedPath ? `${uploadedPath}.converted.xml` : "";
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded." });
+    }
+
+    const ext = path.extname(req.file.originalname || "").toLowerCase();
+    if (!CONVERTIBLE_EXTENSIONS.includes(ext)) {
+      return res.status(400).json({
+        error: `"${ext || "This"}" files can't be converted. Supported: ${CONVERTIBLE_EXTENSIONS.join(", ")}.`,
+      });
+    }
+
+    // The converter recognises formats by content, but MPXJ also looks at
+    // the extension for some readers, so keep it.
+    const inputPath = `${uploadedPath}${ext}`;
+    fs.renameSync(uploadedPath, inputPath);
+    req.file.path = inputPath;
+
+    await convertToMsProjectXml(inputPath, outputPath);
+
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.send(fs.readFileSync(outputPath, "utf8"));
+  } catch (error) {
+    const status = getConverterStatus();
+    res.status(status.status === "no-java" ? 503 : 422).json({
+      error: error.message || "Conversion failed.",
+      converter: status.status,
+    });
+  } finally {
+    for (const file of [req.file?.path, outputPath]) {
+      if (file && fs.existsSync(file)) fs.unlinkSync(file);
+    }
+  }
+});
+
 app.post("/api/import/msproject", upload.single("file"), async (req, res) => {
   let uploadedPath = "";
   let convertedXmlPath = "";
@@ -438,7 +420,7 @@ app.post("/api/import/msproject", upload.single("file"), async (req, res) => {
     if (ext === ".mpp") {
       convertedXmlPath = `${uploadedPath}.converted.xml`;
 
-      await runMppToXmlConverter(uploadedPath, convertedXmlPath);
+      await convertToMsProjectXml(uploadedPath, convertedXmlPath);
 
       plannerData = await readXmlFileAsPlannerData(convertedXmlPath);
     }
@@ -516,4 +498,11 @@ app.post("/api/ai", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`MS Project backend running on http://localhost:${PORT}`);
+
+  // Prepare the converter in the background so the first .mpp import is fast.
+  if (process.env.SKIP_CONVERTER_BUILD !== "true") {
+    ensureBuilt().catch(() => {
+      // Already logged; imports will report the problem to the user.
+    });
+  }
 });
