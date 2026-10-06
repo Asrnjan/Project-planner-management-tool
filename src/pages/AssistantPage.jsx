@@ -92,13 +92,13 @@ function AskClaude({ projectId, disabled }) {
   }
 
   return (
-    <Card className="flex min-h-[420px] flex-col">
+    <Card className="flex h-[560px] flex-col overflow-hidden xl:h-full">
       <CardHeader
         icon={MessageSquare}
         title="Ask about your projects"
         subtitle="Claude answers from a compact summary of your current data. Each question is answered on its own."
       />
-      <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4" aria-live="polite">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4" aria-live="polite">
         {thread.length === 0 ? (
           <div className="space-y-2">
             <p className="text-sm text-slate-500">Try one of these:</p>
@@ -153,7 +153,7 @@ function AskClaude({ projectId, disabled }) {
         <div ref={endRef} />
       </div>
       <form
-        className="flex gap-2 border-t border-slate-100 p-3"
+        className="flex shrink-0 gap-2 border-t border-slate-100 bg-white p-3"
         onSubmit={(event) => {
           event.preventDefault();
           ask(question);
@@ -425,17 +425,18 @@ export default function AssistantPage() {
           <Button variant="primary" onClick={openNewProject}>Create a project</Button>
         </EmptyState>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-2">
+        <div className="grid gap-6 xl:h-[calc(100vh-16rem)] xl:min-h-[480px] xl:grid-cols-2 xl:grid-rows-[minmax(0,1fr)]">
           <AiInsightCard
             key={validProjectId || "portfolio"}
             scope={validProjectId ? "project" : "portfolio"}
             projectId={validProjectId}
+            className="max-h-[640px] xl:h-full xl:max-h-none"
           />
           <AskClaude projectId={validProjectId} disabled={notConfigured} />
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+      <div className="grid items-start gap-6 xl:grid-cols-[2fr_1fr]">
         <PlanGenerator disabled={notConfigured} defaultProjectId={validProjectId} />
         <UsagePanel />
       </div>

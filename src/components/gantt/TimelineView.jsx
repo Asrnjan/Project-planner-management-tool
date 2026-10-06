@@ -339,14 +339,14 @@ export default function TimelineView({ tasks, onUpdateTask }) {
         />
       </div>
 
-      <div className="overflow-auto rounded-xl border border-slate-200">
+      <div className="max-h-[calc(100vh-18rem)] min-h-[320px] overflow-auto rounded-xl border border-slate-200">
         <div
           className="grid min-w-max"
           style={{
             gridTemplateColumns: `260px repeat(${buckets.length}, ${columnWidth}px)`,
           }}
         >
-          <div className="sticky left-0 z-30 border-b border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-600">
+          <div className="sticky left-0 top-0 z-40 border-b border-slate-200 bg-white px-3 py-3 text-xs font-semibold text-slate-600">
             Task
           </div>
 
@@ -356,7 +356,7 @@ export default function TimelineView({ tasks, onUpdateTask }) {
             return (
               <div
                 key={bucket.key}
-                className={`border-b border-slate-200 px-2 py-3 text-center text-[10px] font-semibold ${
+                className={`sticky top-0 z-30 border-b border-slate-200 px-2 py-3 text-center text-[10px] font-semibold ${
                   today
                     ? "bg-blue-50 text-blue-700"
                     : "bg-slate-50 text-slate-600"

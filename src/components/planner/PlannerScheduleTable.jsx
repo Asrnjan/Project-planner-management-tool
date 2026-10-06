@@ -938,7 +938,7 @@ export default function PlannerScheduleTable({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="max-h-[calc(100vh-20rem)] min-h-[320px] overflow-auto">
         <table className="min-w-[1350px] table-fixed border-collapse text-xs">
           <colgroup>
             <col style={{ width: "34px" }} />
@@ -957,7 +957,7 @@ export default function PlannerScheduleTable({
             <col style={{ width: "80px" }} />
           </colgroup>
 
-          <thead className="bg-slate-50">
+          <thead className="sticky top-0 z-20 bg-slate-50 shadow-[0_1px_0_rgb(226,232,240)]">
             <tr className="border-b border-slate-200">
               <HeaderCell title="Row number. Use it in Depends on.">#</HeaderCell>
               <HeaderCell title="Work breakdown number, e.g. 2.1 is the first subtask of task 2">WBS</HeaderCell>

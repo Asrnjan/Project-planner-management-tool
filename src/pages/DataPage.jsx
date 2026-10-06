@@ -620,7 +620,7 @@ export default function DataPage() {
         title="Import & Export"
         description="Bring plans in from almost any tool, and take your data anywhere. Nothing is imported until you confirm."
       />
-      <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+      <div className="grid items-start gap-6 xl:grid-cols-[1.6fr_1fr]">
         <ImportWizard />
         <div className="space-y-6">
           <ExportPanel />

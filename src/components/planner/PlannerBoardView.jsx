@@ -180,11 +180,11 @@ export default function PlannerBoardView({ tasks, onUpdateTask }) {
               if (hoverColumn === status) setHoverColumn("");
             }}
             onDrop={() => handleDrop(status)}
-            className={`rounded-xl border p-2.5 transition ${
+            className={`flex max-h-[calc(100vh-15rem)] min-h-[240px] flex-col rounded-xl border p-2.5 transition ${
               isHovering ? "border-indigo-300 bg-indigo-50/60" : "border-slate-200 bg-slate-100/60"
             }`}
           >
-            <div className="mb-2.5 flex items-center justify-between px-1.5 pt-1">
+            <div className="mb-2.5 flex shrink-0 items-center justify-between px-1.5 pt-1">
               <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <span className={`h-2 w-2 rounded-full ${COLUMN_DOT[status]}`} aria-hidden />
                 {status}
@@ -192,7 +192,7 @@ export default function PlannerBoardView({ tasks, onUpdateTask }) {
               <span className="text-xs font-medium text-slate-500">{statusTasks.length}</span>
             </div>
 
-            <div className="min-h-[180px] space-y-2">
+            <div className="-mx-1 min-h-[120px] flex-1 space-y-2 overflow-y-auto px-1 pb-1">
               {statusTasks.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-xs text-slate-400">
                   {isHovering ? "Release to move task here" : "Drop task here"}

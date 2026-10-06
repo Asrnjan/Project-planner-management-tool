@@ -108,7 +108,7 @@ function OverviewTab({ project, metrics, tasks, onEdit, sprintCount }) {
   const workload = computeWorkload(tasks).slice(0, 6);
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+    <div className="grid items-start gap-4 xl:grid-cols-[1.2fr_1fr]">
       <div className="space-y-4">
         <Card className="p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -174,7 +174,7 @@ function OverviewTab({ project, metrics, tasks, onEdit, sprintCount }) {
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader title="Milestones" subtitle="Key dates" />
-            <ul className="space-y-1 px-5 py-3 text-sm">
+            <ul className="max-h-64 space-y-1 overflow-y-auto px-5 py-3 text-sm">
               {milestones.length === 0 ? (
                 <li className="text-slate-500">No milestones yet. Tick "Milestone" on a task in the Schedule.</li>
               ) : (
@@ -240,6 +240,23 @@ export default function PlannerPage() {
   const focusedTaskId = searchParams.get("taskId") || "";
   const viewParam = searchParams.get("view") || "";
   const reportView = ["analysis", "baselines", "dependencies"].includes(viewParam) ? viewParam : "status";
+
+  // Overview, sprints, documents and status reports only make sense for one project, so open
+  // the first project instead of an empty "pick a project" screen.
+  const needsSingleProject =
+    ["overview", "sprints", "documents"].includes(activeTab) || (activeTab === "reports" && reportView === "status");
+  const fallbackProjectId = !selectedProjectId && needsSingleProject ? projects[0]?.id || "" : "";
+  useEffect(() => {
+    if (!fallbackProjectId) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("projectId", fallbackProjectId);
+        return next;
+      },
+      { replace: true }
+    );
+  }, [fallbackProjectId, setSearchParams]);
 
   const [selectedRelationshipTaskId, setSelectedRelationshipTaskId] = useState("");
   const [editingProject, setEditingProject] = useState(false);

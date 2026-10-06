@@ -71,7 +71,7 @@ export default function HelpPage() {
         </ol>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid items-start gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader icon={LayoutDashboard} title="The main areas" />
           <dl className="space-y-3 px-5 py-4 text-sm">
@@ -124,7 +124,7 @@ export default function HelpPage() {
         </dl>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid items-start gap-6 lg:grid-cols-2">
         <Card id="import">
           <CardHeader icon={ArrowRightLeft} title="Importing from other tools" />
           <ul className="list-disc space-y-2 py-4 pl-10 pr-5 text-sm text-slate-600">

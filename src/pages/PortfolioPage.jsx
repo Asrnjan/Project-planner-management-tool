@@ -472,7 +472,7 @@ export default function PortfolioPage() {
         <StatTile label="Due in 7 days" value={portfolio.dueSoon} sub={`${portfolio.unassigned} open tasks unassigned`} icon={ClipboardList} tone="slate" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+      <div className="grid items-start gap-4 xl:grid-cols-[1.1fr_1fr]">
         <NeedsAttention items={portfolio.attention} />
         <AiInsightCard scope="portfolio" />
       </div>

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import fs from "node:fs/promises";
-import { loadSample, mockClaude, trackErrors } from "./helpers";
+import { insightsFixture, loadSample, mockClaude, trackErrors } from "./helpers";
 
 test.describe("first run and navigation", () => {
   test("new user creates a project and a task from scratch", async ({ page }) => {
@@ -286,6 +286,28 @@ test.describe("Claude", () => {
     await expect(page.getByText(/Claude drafted the summary/)).toBeVisible();
 
     expect(calls.map((call) => call.task)).toEqual(["ask", "generate_plan", "weekly_report"]);
+  });
+
+  test("briefing and chat fit the screen; the question box needs no page scroll", async ({ page }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    const longBriefing = {
+      ...insightsFixture,
+      risks: Array.from({ length: 6 }, (_, i) => ({ ...insightsFixture.risks[0], title: `Risk ${i + 1}` })),
+      recommendations: Array.from({ length: 5 }, (_, i) => ({ ...insightsFixture.recommendations[0], action: `Action ${i + 1}` })),
+    };
+    await mockClaude(page, { onPost: (body) => (body.task === "ask" ? "Short answer." : longBriefing) });
+    await loadSample(page);
+    await page.goto("/assistant");
+    await page.getByTestId("ai-briefing-run").click();
+    await expect(page.getByText("Action 5")).toBeAttached();
+
+    const input = page.getByLabel("Your question");
+    await expect(input).toBeInViewport();
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    await input.fill("Any risks?");
+    await page.getByRole("button", { name: "Ask", exact: true }).click();
+    await expect(page.getByText("Short answer.")).toBeVisible();
+    await expect(input).toBeInViewport();
   });
 
   test("explains clearly when Claude is not configured", async ({ page }) => {

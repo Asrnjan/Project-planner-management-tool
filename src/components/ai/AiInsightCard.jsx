@@ -142,7 +142,7 @@ export function AiInsightsView({ result }) {
 }
 
 /** "Claude briefing" card for the whole portfolio or one project. */
-export default function AiInsightCard({ scope = "portfolio", projectId = "" }) {
+export default function AiInsightCard({ scope = "portfolio", projectId = "", className = "max-h-[640px]" }) {
   const projects = usePlannerStore((state) => state.projects);
   const tasks = usePlannerStore((state) => state.tasks);
   const sprints = usePlannerStore((state) => state.sprints);
@@ -161,7 +161,7 @@ export default function AiInsightCard({ scope = "portfolio", projectId = "" }) {
   const notConfigured = aiStatus && !aiStatus.configured;
 
   return (
-    <Card className="flex flex-col overflow-hidden" data-testid="ai-insight-card">
+    <Card className={cx("flex flex-col overflow-hidden", className)} data-testid="ai-insight-card">
       <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-indigo-50 px-5 py-4">
         <div className="flex items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm">
@@ -190,7 +190,7 @@ export default function AiInsightCard({ scope = "portfolio", projectId = "" }) {
         ) : null}
       </div>
 
-      <div className="flex-1 px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         {notConfigured ? (
           <AiNotConfigured />
         ) : status === "loading" && !response ? (

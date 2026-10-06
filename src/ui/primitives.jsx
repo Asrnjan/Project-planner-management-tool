@@ -141,7 +141,7 @@ export function Badge({ tone = "slate", className = "", children }) {
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+        "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold",
         BADGE_TONES[tone],
         className
       )}
@@ -446,12 +446,20 @@ export function Segmented({ options, value, onChange, label }) {
 }
 
 /** Consistent table styling. columns: [{ key, label, className, render }] */
-export function DataTable({ columns, rows, rowKey = "id", empty = "Nothing here yet.", onRowClick }) {
+export function DataTable({
+  columns,
+  rows,
+  rowKey = "id",
+  empty = "Nothing here yet.",
+  onRowClick,
+  maxHeight = "max-h-[calc(100vh-14rem)]",
+}) {
+  // Long tables scroll inside their panel and keep the header in view.
   return (
-    <div className="overflow-x-auto">
+    <div className={cx("overflow-auto", maxHeight)}>
       <table className="min-w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-200 bg-slate-50/70 text-left">
+          <tr className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-left">
             {columns.map((column) => (
               <th key={column.key} scope="col" className={cx("whitespace-nowrap px-4 py-2.5 text-xs font-medium text-slate-500", column.className)}>
                 {column.label}
