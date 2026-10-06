@@ -71,6 +71,22 @@ test.describe("first run and navigation", () => {
     errors.assertNone();
   });
 
+  test("recovers by itself when a new release replaced the page's code", async ({ page }) => {
+    await loadSample(page);
+    let failed = false;
+    // The first request for the board's code fails, as it does when a deploy
+    // replaced the file while the tab was open.
+    await page.route(/\/assets\/PlannerBoardView-.*\.js$/, (route) => {
+      if (failed) return route.continue();
+      failed = true;
+      return route.abort();
+    });
+    await page.goto("/planner?tab=board");
+    await expect(page.getByRole("heading", { name: "Not Started" })).toBeVisible();
+    await expect(page.getByText("This screen hit a problem")).toHaveCount(0);
+    expect(failed).toBe(true);
+  });
+
   test("command palette finds tasks and jumps to them", async ({ page }) => {
     await mockClaude(page);
     await loadSample(page);
