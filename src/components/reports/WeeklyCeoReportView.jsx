@@ -1407,8 +1407,9 @@ export default function WeeklyCeoReportView({
               </h4>
 
               <p className="text-xs text-slate-500">
-                Fill the required sections and submit from the bottom of this
-                form.
+                Two ways to create it: let Claude write the whole report from
+                live project data, or fill in the sections yourself. Either
+                way you review and submit from the bottom of the form.
               </p>
             </div>
 
@@ -1418,17 +1419,43 @@ export default function WeeklyCeoReportView({
                 previousReport={projectReports[0]}
                 onDraft={(draft) => {
                   applyPlannerMetrics();
-                  setForm((current) => ({
-                    ...current,
-                    executiveSummary: draft.executiveSummary || current.executiveSummary,
-                    achievements: draft.achievements || current.achievements,
-                    nextWeekPlan: draft.nextWeekPlan || current.nextWeekPlan,
-                    risks: draft.risks || current.risks,
-                    issues: draft.issues || current.issues,
-                    mitigationPlan: draft.mitigationPlan || current.mitigationPlan,
-                    overallHealthNotes: current.overallHealthNotes || `Claude assessment: ${draft.overallStatus}, confidence ${draft.confidenceLevel}.`,
-                  }));
-                  setMessage("Claude drafted the summary, achievements, plan, risks and mitigation. Edit anything before submitting.");
+                  // Claude writes every non-financial section from live
+                  // data; numbers come from the planner, budget stays manual.
+                  const textFields = [
+                    "executiveSummary",
+                    "leadershipMessage",
+                    "currentStatus",
+                    "overallHealthNotes",
+                    "achievements",
+                    "milestonesCompleted",
+                    "majorMilestoneAchieved",
+                    "milestonesNextWeek",
+                    "upcomingMilestone",
+                    "nextWeekPlan",
+                    "risks",
+                    "potentialRisk",
+                    "issues",
+                    "challengesFaced",
+                    "mitigationPlan",
+                    "escalationDetails",
+                    "decisionDetails",
+                    "supportNeeded",
+                    "timelineNotes",
+                  ];
+                  setForm((current) => {
+                    const next = { ...current };
+                    textFields.forEach((field) => {
+                      if (typeof draft[field] === "string" && draft[field].trim()) next[field] = draft[field].trim();
+                    });
+                    if (["Green", "Amber", "Red"].includes(draft.overallStatus)) next.overallStatus = draft.overallStatus;
+                    if (["Yes", "No"].includes(draft.escalationRequired)) next.escalationRequired = draft.escalationRequired;
+                    if (["Yes", "No"].includes(draft.decisionRequired)) next.decisionRequired = draft.decisionRequired;
+                    if (draft.confidenceLevel && "confidenceLevel" in current) next.confidenceLevel = draft.confidenceLevel;
+                    return next;
+                  });
+                  setMessage(
+                    `Claude wrote the full report from live project data (status ${draft.overallStatus}, confidence ${draft.confidenceLevel}). Review each section, add budget figures if needed, then submit.`
+                  );
                 }}
               />
               <button

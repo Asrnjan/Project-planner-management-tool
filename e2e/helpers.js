@@ -57,6 +57,13 @@ export async function mockClaude(page, { configured = true, onPost } = {}) {
         ],
       },
       map_columns: { mappings: [] },
+      portfolio_deck: {
+        headline: "Two projects active; CRM needs a licence decision.",
+        summary: "Website is close to plan; CRM is behind on data mapping.",
+        projects: [
+          { key: "p1", statusSummary: "Claude status for the first project.", keyUpdates: ["Design signed off"], risks: ["Licence delay"], nextSteps: ["Launch prep"], decisionsNeeded: [] },
+        ],
+      },
     };
     const result = onPost ? onPost(body) : results[body.task];
     return route.fulfill({ json: { task: body.task, result, model: "claude-opus-5-5", usage, cached: false } });
