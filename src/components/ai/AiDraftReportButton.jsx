@@ -7,7 +7,7 @@ import { notify } from "../../ui/feedback";
 import { describeUsage } from "./useAiJob";
 
 /** Fills the weekly report form with a Claude draft the manager then edits. */
-export default function AiDraftReportButton({ project, previousReport, onDraft }) {
+export default function AiDraftReportButton({ project, previousReport, onDraft, label = "Generate report with Claude" }) {
   const tasks = usePlannerStore((state) => state.tasks);
   const sprints = usePlannerStore((state) => state.sprints);
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ export default function AiDraftReportButton({ project, previousReport, onDraft }
         buildWeeklyReportInput(project, tasks, sprints, previousReport)
       );
       onDraft(response.result);
-      notify.success(`Draft ready (${describeUsage(response)}). Review every section before submitting.`);
+      notify.success(`Report written by Claude (${describeUsage(response)}). Review every section before submitting.`);
     } catch (error) {
       notify.error(error.message);
     } finally {
@@ -43,7 +43,7 @@ export default function AiDraftReportButton({ project, previousReport, onDraft }
       className="inline-flex w-fit items-center justify-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-violet-700 disabled:opacity-60"
     >
       {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-      {loading ? "Drafting..." : "Draft with Claude"}
+      {loading ? "Claude is writing the report..." : label}
     </button>
   );
 }

@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 
-import CentralizedManagerReportButton from "../components/CentralizedManagerReportButton";
+import PortfolioDeckButton from "../components/PortfolioDeckButton";
 import ProjectForm from "../components/projects/ProjectForm";
 import AiInsightCard from "../components/ai/AiInsightCard";
 import { usePlannerStore } from "../store/usePlannerStore";
@@ -468,7 +468,7 @@ export default function PortfolioPage() {
         description={`${portfolio.activeProjects} active project${portfolio.activeProjects === 1 ? "" : "s"} · ${healthCounts.good} on track · ${healthCounts.risk} at risk · ${healthCounts.off} off track`}
         actions={
           <>
-            <CentralizedManagerReportButton />
+            <PortfolioDeckButton />
             {permissions["ai.use"] ? (
               <Button icon={Sparkles} variant="ai" onClick={() => navigate("/assistant")}>
                 Ask Claude

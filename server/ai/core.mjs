@@ -69,28 +69,86 @@ const INSIGHTS_SCHEMA = {
   },
 };
 
+const BULLETS = "Bulleted lines starting with '- '.";
+
 const REPORT_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: [
     "overallStatus",
+    "confidenceLevel",
     "executiveSummary",
+    "leadershipMessage",
+    "currentStatus",
+    "overallHealthNotes",
     "achievements",
+    "milestonesCompleted",
+    "majorMilestoneAchieved",
+    "milestonesNextWeek",
+    "upcomingMilestone",
     "nextWeekPlan",
     "risks",
+    "potentialRisk",
     "issues",
+    "challengesFaced",
     "mitigationPlan",
-    "confidenceLevel",
+    "escalationRequired",
+    "escalationDetails",
+    "decisionRequired",
+    "decisionDetails",
+    "supportNeeded",
+    "timelineNotes",
   ],
   properties: {
     overallStatus: { type: "string", enum: ["Green", "Amber", "Red"] },
-    executiveSummary: { type: "string", description: "3-5 sentences for senior leadership." },
-    achievements: { type: "string", description: "Bulleted lines starting with '- '." },
-    nextWeekPlan: { type: "string", description: "Bulleted lines starting with '- '." },
-    risks: { type: "string", description: "Bulleted lines starting with '- ', or 'None identified'." },
-    issues: { type: "string", description: "Bulleted lines starting with '- ', or 'None'." },
-    mitigationPlan: { type: "string", description: "Bulleted lines starting with '- '." },
     confidenceLevel: { type: "string", enum: ["High", "Medium", "Low"] },
+    executiveSummary: { type: "string", description: "3-5 sentences for senior leadership, with the key numbers." },
+    leadershipMessage: { type: "string", description: "One or two sentences: the single thing leadership must know." },
+    currentStatus: { type: "string", description: "One sentence on where the project stands today." },
+    overallHealthNotes: { type: "string", description: "Why the status colour was chosen, citing the numbers." },
+    achievements: { type: "string", description: BULLETS },
+    milestonesCompleted: { type: "string", description: BULLETS + " Or 'None this week'." },
+    majorMilestoneAchieved: { type: "string", description: "The most important milestone reached, with its date, or 'None this week'." },
+    milestonesNextWeek: { type: "string", description: BULLETS + " Or 'None due'." },
+    upcomingMilestone: { type: "string", description: "The next milestone and its date." },
+    nextWeekPlan: { type: "string", description: BULLETS },
+    risks: { type: "string", description: BULLETS + " Or 'None identified'." },
+    potentialRisk: { type: "string", description: "The biggest risk in one sentence." },
+    issues: { type: "string", description: BULLETS + " Or 'None'." },
+    challengesFaced: { type: "string", description: BULLETS + " Or 'None'." },
+    mitigationPlan: { type: "string", description: BULLETS },
+    escalationRequired: { type: "string", enum: ["Yes", "No"] },
+    escalationDetails: { type: "string", description: "What must be escalated and to whom, or empty." },
+    decisionRequired: { type: "string", enum: ["Yes", "No"] },
+    decisionDetails: { type: "string", description: "The decision needed, or empty." },
+    supportNeeded: { type: "string", description: "Help needed from outside the team, or empty." },
+    timelineNotes: { type: "string", description: "Target vs forecast finish and slip, in one or two sentences." },
+  },
+};
+
+const DECK_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["headline", "summary", "projects"],
+  properties: {
+    headline: { type: "string", description: "One sentence on the state of the portfolio." },
+    summary: { type: "string", description: "2-3 sentences for stakeholders across all projects." },
+    projects: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["key", "statusSummary", "keyUpdates", "risks", "nextSteps", "decisionsNeeded"],
+        properties: {
+          key: { type: "string" },
+          statusSummary: { type: "string", description: "1-2 sentences: where it stands and why." },
+          keyUpdates: { type: "array", items: { type: "string" }, description: "2-4 short items." },
+          risks: { type: "array", items: { type: "string" }, description: "0-4 short items, each with impact." },
+          nextSteps: { type: "array", items: { type: "string" }, description: "2-4 short items with owner or date when known." },
+          decisionsNeeded: { type: "array", items: { type: "string" }, description: "0-3 asks of stakeholders." },
+        },
+      },
+    },
   },
 };
 
@@ -179,10 +237,17 @@ Focus on what changes decisions: projects off track, late or blocked critical wo
 Use the metrics, the listed overdue, blocked and upcoming tasks, milestones and workload. Recommendations must be concrete actions on named tasks or people.`,
   },
   weekly_report: {
-    maxTokens: 1800,
+    maxTokens: 3200,
     schema: REPORT_SCHEMA,
-    instructions: `Job: draft this week's status report for the project in <data>.
-Achievements come from tasks completed recently, the plan from tasks due next. overallStatus: Green when on track, Amber when at risk, Red when off track or a milestone will be missed. Keep every field concise; the manager will edit it.`,
+    instructions: `Job: write this week's complete status report for the project in <data>.
+Accuracy first: use only facts in <data> (task names, owners, dates, counts, percentages) and quote them exactly; never invent work, people, dates or numbers. If something is unknown, say so briefly or write 'None'.
+Achievements and milestones completed come from recentlyDone and milestones; the plan from upcoming; risks and issues from overdue, blocked, unassigned work and slip. overallStatus: Green when on track, Amber when at risk, Red when off track or a milestone will be missed; explain it with the numbers in overallHealthNotes. Escalate or ask for a decision only when blocked or slipping work needs someone outside the team. No budget or cost content. Keep every field concise.`,
+  },
+  portfolio_deck: {
+    maxTokens: 4500,
+    schema: DECK_SCHEMA,
+    instructions: `Job: write the stakeholder narrative for a portfolio slide deck from <data>.
+Return one entry per project, using its key. Use only facts in <data>: task names, owners, dates and numbers exactly as given; never invent. Short, plain items (under 15 words each) that a stakeholder can read on a slide. keyUpdates = progress since last time; risks = what could delay delivery and why; nextSteps = the next concrete actions; decisionsNeeded = only real asks of stakeholders (blocked work, slips), else empty. No budget or cost content.`,
   },
   generate_plan: {
     maxTokens: 3500,

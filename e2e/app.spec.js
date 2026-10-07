@@ -262,6 +262,27 @@ test.describe("import and export", () => {
 });
 
 test.describe("Claude", () => {
+  test("portfolio slides download as an editable PowerPoint written by Claude", async ({ page }, testInfo) => {
+    const errors = trackErrors(page);
+    const calls = await mockClaude(page);
+    await loadSample(page);
+    await page.goto("/");
+
+    await page.getByTestId("portfolio-slides").click();
+    await page.getByLabel("Title").fill("Steering committee update");
+    await expect(page.getByRole("radio", { name: /Written by Claude/ })).toBeChecked();
+    const pending = page.waitForEvent("download");
+    await page.getByTestId("deck-generate").click();
+    const download = await pending;
+    expect(download.suggestedFilename()).toMatch(/^Steering_committee_update_\d{4}-\d{2}-\d{2}\.pptx$/);
+    const file = testInfo.outputPath("deck.pptx");
+    await download.saveAs(file);
+    const bytes = await fs.readFile(file);
+    expect(bytes.subarray(0, 2).toString()).toBe("PK");
+    expect(calls.some((call) => call.task === "portfolio_deck")).toBe(true);
+    errors.assertNone();
+  });
+
   test("dashboard briefing runs on request and is cached", async ({ page }) => {
     const calls = await mockClaude(page);
     await loadSample(page);
@@ -299,7 +320,7 @@ test.describe("Claude", () => {
     await page.getByLabel("Project", { exact: true }).selectOption({ label: "CRM Migration" });
     await page.getByRole("tab", { name: "Reports" }).click();
     await page.getByTestId("ai-draft-report").click();
-    await expect(page.getByText(/Claude drafted the summary/)).toBeVisible();
+    await expect(page.getByText(/Claude wrote the full report/)).toBeVisible();
 
     expect(calls.map((call) => call.task)).toEqual(["ask", "generate_plan", "weekly_report"]);
   });
